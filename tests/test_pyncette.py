@@ -1,5 +1,5 @@
 
-from pyncette import main
+# from pyncette import main
 
 
 def test_main():
