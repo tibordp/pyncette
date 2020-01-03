@@ -47,7 +47,7 @@ Overview
 
 .. end-badges
 
-A simple Redis-based distributed cron
+A reliable distributed cron with pluggable storage backends
 
 * Free software: MIT license
 
