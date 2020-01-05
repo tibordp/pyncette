@@ -1,4 +1,4 @@
-__version__ = "__version__ = '0.0.3'"
+__version__ = "0.0.3"
 
 from .model import Context
 from .model import ExecutionMode
