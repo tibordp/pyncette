@@ -1,6 +1,238 @@
+import asyncio
+import datetime
+from unittest.mock import MagicMock
 
-# from pyncette import main
+import pytest
+from croniter.croniter import CroniterBadCronError
+from timemachine import setup_timemachine
+
+from pyncette import Context
+from pyncette import ExecutionMode
+from pyncette import Pyncette
+
+BASE_TIME = datetime.datetime(2019, 1, 1, 0, 0, 0)
 
 
-def test_main():
-    pass
+def test_invalid_configuration():
+    app = Pyncette()
+
+    with pytest.raises(ValueError):
+
+        @app.task()
+        def _dummy1(context: Context):
+            pass
+
+    with pytest.raises(ValueError):
+
+        @app.task(interval=datetime.timedelta(seconds=2), schedule="* * * * *")
+        def _dummy2(context: Context):
+            pass
+
+    with pytest.raises(CroniterBadCronError):
+
+        @app.task(schedule="abracadabra")
+        def _dummy3(context: Context):
+            pass
+
+    with pytest.raises(ValueError):
+
+        @app.task(execution_mode=ExecutionMode.BEST_EFFORT, commit_on_failure=True)
+        def _dummy4(context: Context):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_successful_task_interval(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def successful_task(context: Context) -> None:
+        counter()
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_successful_task_cronspec(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette(poll_interval=datetime.timedelta(seconds=30))
+
+    counter = MagicMock()
+
+    @app.task(schedule="* * * * *")
+    async def successful_task(context: Context) -> None:
+        counter()
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(minutes=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=60))
+    await task
+
+    assert counter.call_count == 10
+
+
+@pytest.mark.asyncio
+async def test_failed_task_retried_on_every_tick(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def failing_task(context: Context) -> None:
+        counter()
+        raise RuntimeError("Oops")
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 9
+
+
+@pytest.mark.asyncio
+async def test_failed_task_not_retried_if_commit_on_failure(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2), commit_on_failure=True)
+    async def failing_task(context: Context) -> None:
+        counter()
+        raise RuntimeError("Oops")
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_failed_task_not_retried_if_best_effort(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=2), execution_mode=ExecutionMode.BEST_EFFORT
+    )
+    async def failing_task(context: Context) -> None:
+        counter()
+        raise RuntimeError("Oops")
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_locked_while_executing(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def successful_task(context: Context) -> None:
+        counter()
+        await asyncio.sleep(5)
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_not_locked_while_executing_if_best_effort_is_used(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=2), execution_mode=ExecutionMode.BEST_EFFORT
+    )
+    async def successful_task(context: Context) -> None:
+        counter()
+        await asyncio.sleep(5)
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_catches_up_with_stale_executions(monkeypatch):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def once_failing_task(context: Context) -> None:
+        counter()
+        if counter.call_count == 1:
+            await asyncio.sleep(10)
+            raise RuntimeError("Oops")
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=20))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 10
+
+
+@pytest.mark.asyncio
+async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
+    monkeypatch,
+):
+    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2), fast_forward=True)
+    async def once_failing_task(context: Context) -> None:
+        counter()
+        if counter.call_count == 1:
+            await asyncio.sleep(10)
+            raise RuntimeError("Oops")
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=20))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 7
