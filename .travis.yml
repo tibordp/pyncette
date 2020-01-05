@@ -17,6 +17,10 @@ matrix:
         - TOXENV=py37
       python: '3.7'
     - env:
+        - TOXENV=integration
+      python: '3.7'
+      services: redis-server
+    - env:
         - TOXENV=py38
       python: '3.8'
 before_install:

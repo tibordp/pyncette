@@ -125,7 +125,6 @@ class Pyncette:
 
     def main(self):
         # Setup logging
-        # Setup signal handling
         self._setup_signal_handler()
 
         loop = asyncio.get_event_loop()
