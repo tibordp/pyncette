@@ -39,9 +39,9 @@ Overview
     :alt: Supported implementations
     :target: https://pypi.org/project/pyncette
 
-.. |commits-since| image:: https://img.shields.io/github/commits-since/tibordp/pyncette/v0.0.3.svg
+.. |commits-since| image:: https://img.shields.io/github/commits-since/tibordp/pyncette/v0.0.4.svg
     :alt: Commits since latest release
-    :target: https://github.com/tibordp/pyncette/compare/v0.0.3...master
+    :target: https://github.com/tibordp/pyncette/compare/v0.0.4...master
 
 
 
