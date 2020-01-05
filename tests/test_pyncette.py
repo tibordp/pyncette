@@ -4,13 +4,20 @@ from unittest.mock import MagicMock
 
 import pytest
 from croniter.croniter import CroniterBadCronError
-from timemachine import setup_timemachine
+from timemachine import TimeMachine
 
+import pyncette
 from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import Pyncette
 
-BASE_TIME = datetime.datetime(2019, 1, 1, 0, 0, 0)
+
+@pytest.fixture
+def timemachine(monkeypatch):
+    timemachine = TimeMachine(datetime.datetime(2019, 1, 1, 0, 0, 0))
+    monkeypatch.setattr(pyncette.pyncette, "current_time", timemachine.utcnow)
+    monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
+    return timemachine
 
 
 def test_invalid_configuration():
@@ -42,8 +49,7 @@ def test_invalid_configuration():
 
 
 @pytest.mark.asyncio
-async def test_successful_task_interval(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_successful_task_interval(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -62,8 +68,7 @@ async def test_successful_task_interval(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_successful_task_cronspec(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_successful_task_cronspec(timemachine):
     app = Pyncette(poll_interval=datetime.timedelta(seconds=30))
 
     counter = MagicMock()
@@ -82,8 +87,7 @@ async def test_successful_task_cronspec(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_failed_task_retried_on_every_tick(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_failed_task_retried_on_every_tick(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -103,8 +107,7 @@ async def test_failed_task_retried_on_every_tick(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_failed_task_not_retried_if_commit_on_failure(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_failed_task_not_retried_if_commit_on_failure(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -124,8 +127,7 @@ async def test_failed_task_not_retried_if_commit_on_failure(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_failed_task_not_retried_if_best_effort(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_failed_task_not_retried_if_best_effort(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -147,8 +149,7 @@ async def test_failed_task_not_retried_if_best_effort(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_locked_while_executing(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_locked_while_executing(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -168,8 +169,7 @@ async def test_locked_while_executing(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_not_locked_while_executing_if_best_effort_is_used(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_not_locked_while_executing_if_best_effort_is_used(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -191,8 +191,7 @@ async def test_not_locked_while_executing_if_best_effort_is_used(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_catches_up_with_stale_executions(monkeypatch):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
+async def test_catches_up_with_stale_executions(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -215,9 +214,8 @@ async def test_catches_up_with_stale_executions(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
-    monkeypatch,
+    timemachine,
 ):
-    timemachine = setup_timemachine(monkeypatch, BASE_TIME)
     app = Pyncette()
 
     counter = MagicMock()

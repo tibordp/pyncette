@@ -18,10 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class InMemoryRepository(Repository):
+    """Redis-backed store for Pyncete task execution data"""
+
     _data: Dict[str, Any]
 
     def __init__(self):
         self._data = {}
+        # Locking is technically not required if we are on a single-threaded event loop, since
+        # we do not yield while the lock is held, but just to be on the safe side.
         self._lock = asyncio.Lock()
 
     async def poll_task(
@@ -93,4 +97,5 @@ class InMemoryRepository(Repository):
 
 @contextlib.asynccontextmanager
 async def in_memory_repository(**kwargs,) -> AsyncGenerator[InMemoryRepository, None]:
+    """Factory context manager for in-memory repository"""
     yield InMemoryRepository()

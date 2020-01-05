@@ -2,8 +2,6 @@ import asyncio
 import datetime
 import logging
 
-import pyncette
-
 logger = logging.getLogger(__name__)
 
 
@@ -49,10 +47,3 @@ class TimeMachine:
 
         self.offset = initial_offset + delta
         logger.info(f"Jumped to T+{(initial_offset + delta).total_seconds()}s")
-
-
-def setup_timemachine(monkeypatch, base_time=datetime.datetime.utcnow()):
-    timemachine = TimeMachine(base_time)
-    monkeypatch.setattr(pyncette.pyncette, "current_time", timemachine.utcnow)
-    monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
-    return timemachine

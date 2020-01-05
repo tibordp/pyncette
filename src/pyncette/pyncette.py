@@ -49,6 +49,8 @@ class Pyncette:
         self._configuration = kwargs
 
     def task(self, **kwargs) -> Decorator[TaskFunc]:
+        """Decorator for marking the coroutine as a task"""
+
         def _func(func: TaskFunc) -> TaskFunc:
             self._discovered_tasks.append(Task.from_function(func, **kwargs))
             return func
@@ -97,6 +99,7 @@ class Pyncette:
                 logger.debug(f"Not executing task {task}, because it is locked.")
 
     async def run(self):
+        """Runs the Pyncette's main event loop."""
         async with self._repository_factory(
             **self._configuration
         ) as repository, DefaultScheduler() as scheduler:
@@ -109,6 +112,7 @@ class Pyncette:
                 await asyncio.sleep(self._poll_interval.total_seconds())
 
     def shutdown(self):
+        """Initiates a graceful shutdown"""
         logger.info("Initiating graceful shutdown")
         self._shutting_down = True
 
@@ -124,6 +128,7 @@ class Pyncette:
         signal.signal(signal.SIGINT, handler)
 
     def main(self):
+        """Convenience entrypoint for console apps, which sets up logging and signal handling."""
         # Setup logging
         self._setup_signal_handler()
 
