@@ -62,12 +62,48 @@ You can also install the in-development version with::
 
     pip install https://github.com/tibordp/pyncette/archive/master.zip
 
-
 Documentation
 =============
 
 
 https://pyncette.readthedocs.io
+
+
+Usage example
+=============
+
+Simple in-memory cron (does not persist state)
+
+.. code:: python
+
+    from pyncette import Pyncette
+
+    app = Pyncette()
+
+    @app.cron(schedule='* * * * *')
+    async def foo():
+        print('This will run every minute')
+
+    if __name__ = '__main__':
+        app.main()
+
+    # alternatively asyncio.run(app.run())
+
+Persistent distributed cron using Redis (coordinates execution with parallel instances and survives restarts)
+
+.. code:: python
+
+    from pyncette import Pyncette
+    from pyncette.repository.redis import redis_repository
+
+    app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost')
+
+    @app.cron(schedule='* * * * *')
+    async def foo():
+        print('This will run every minute')
+
+    if __name__ = '__main__':
+        app.main()
 
 
 Development

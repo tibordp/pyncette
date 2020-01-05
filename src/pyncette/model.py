@@ -29,5 +29,7 @@ class ResultType(Enum):
 
 
 class ExecutionMode(Enum):
+    """The execution mode for a Pyncette task."""
+
     RELIABLE = 0
     BEST_EFFORT = 1

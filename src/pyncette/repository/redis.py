@@ -59,6 +59,8 @@ class _ScriptResponse:
 
 
 class RedisRepository(Repository):
+    """Redis-backed store for Pyncete task execution data"""
+
     _redis_client: aioredis.Redis
     _namespace: str
     _poll_script: LuaScript
@@ -239,6 +241,7 @@ class RedisRepository(Repository):
 
 @contextlib.asynccontextmanager
 async def redis_repository(**kwargs) -> AsyncGenerator[RedisRepository, None]:
+    """Factory context manager for Redis repository that initializes the connection to Redis"""
     redis_pool = await aioredis.create_redis_pool(kwargs["redis_url"])
     try:
         repository = RedisRepository(redis_pool, **kwargs)
