@@ -51,17 +51,6 @@ class Task:
         if self.schedule is not None:
             croniter.expand(self.schedule)
 
-    @staticmethod
-    def from_function(func: TaskFunc, **kwargs):
-        kwargs = {
-            **kwargs,
-            "name": kwargs.get("name", None) or getattr(func, "__name__", None),
-        }
-        if kwargs["name"] is not None:
-            return Task(func=func, **kwargs)
-        else:
-            raise ValueError("Unable to determine name for the task")
-
     def _get_future_runs(
         self, utc_now: datetime.datetime, last_execution: Optional[datetime.datetime],
     ):

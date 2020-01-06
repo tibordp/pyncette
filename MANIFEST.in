@@ -3,6 +3,7 @@ graft src
 graft ci
 graft tests
 
+include .readthedocs.yml
 include .bumpversion.cfg
 include .coveragerc
 include .cookiecutterrc
