@@ -1,16 +1,22 @@
 import asyncio
+import contextlib
+import copy
 import datetime
 import logging
 import signal
 import sys
 from typing import Any
+from typing import AsyncContextManager
+from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 
 from .model import Context
 from .model import Decorator
 from .model import ExecutionMode
+from .model import FixtureFunc
 from .model import Lease
 from .model import ResultType
 from .model import TaskFunc
@@ -28,8 +34,13 @@ def current_time() -> datetime.datetime:
 
 
 class Pyncette:
+    """Pyncette application."""
+
     _discovered_tasks: List[Task]
+    _startup_tasks: List[Task]
+    _shutdown_tasks: List[Task]
     _shutting_down: bool
+    _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _repository_factory: RepositoryFactory
     _commit_on_failure: bool
     _poll_interval: datetime.timedelta
@@ -43,6 +54,7 @@ class Pyncette:
         **kwargs,
     ):
         self._discovered_tasks = []
+        self._fixtures = []
         self._shutting_down = False
         self._poll_interval = poll_interval
         self._repository_factory = repository_factory
@@ -52,16 +64,43 @@ class Pyncette:
         """Decorator for marking the coroutine as a task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
-            self._discovered_tasks.append(Task.from_function(func, **kwargs))
+            task_kwargs = {
+                **kwargs,
+                "name": kwargs.get("name", None) or getattr(func, "__name__", None),
+            }
+            if task_kwargs["name"] is not None:
+                self._discovered_tasks.append(Task(func=func, **task_kwargs))
+            else:
+                raise ValueError("Unable to determine name for the task")
+            return func
+
+        return _func
+
+    def fixture(self, name: Optional[str] = None) -> Decorator[FixtureFunc]:
+        """Decorator for marking the generator as a fixture"""
+
+        def _func(func: FixtureFunc) -> FixtureFunc:
+            fixture_name = name or getattr(func, "__name__", None)
+            if fixture_name is not None:
+                self._fixtures.append(
+                    (fixture_name, contextlib.asynccontextmanager(func))
+                )
+            else:
+                raise ValueError("Unable to determine name for the fixture")
             return func
 
         return _func
 
     async def _execute_task(
-        self, repository: Repository, task: Task, lease: Optional[Lease]
+        self,
+        repository: Repository,
+        task: Task,
+        lease: Optional[Lease],
+        root_context: Context,
     ):
         try:
-            await task.task_func(Context(self, task))
+            context = copy.copy(root_context)
+            await task.task_func(context)
             execution_suceeded = True
         except Exception as e:
             logger.warning(f"Task {task} failed", exc_info=e)
@@ -83,14 +122,18 @@ class Pyncette:
                 exc_info=e,
             )
 
-    async def _tick(self, repository: Repository, scheduler: DefaultScheduler):
+    async def _tick(
+        self, repository: Repository, scheduler: DefaultScheduler, root_context: Context
+    ):
         utc_now = current_time()
 
         for task in self._discovered_tasks:
             poll_result, lease = await repository.poll_task(utc_now, task)
             if poll_result == ResultType.READY:
                 logger.info(f"Executing task {task}")
-                scheduler.spawn_task(self._execute_task(repository, task, lease))
+                scheduler.spawn_task(
+                    self._execute_task(repository, task, lease, root_context)
+                )
             elif poll_result == ResultType.PENDING:
                 logger.debug(
                     f"Not executing task {task}, because it is not yet scheduled."
@@ -102,14 +145,22 @@ class Pyncette:
         """Runs the Pyncette's main event loop."""
         async with self._repository_factory(
             **self._configuration
-        ) as repository, DefaultScheduler() as scheduler:
+        ) as repository, DefaultScheduler() as scheduler, contextlib.AsyncExitStack() as stack:
+            root_context = await self._create_context(stack)
+
             while not self._shutting_down:
                 try:
-                    await self._tick(repository, scheduler)
+                    await self._tick(repository, scheduler, root_context)
                 except Exception as e:
                     logger.warning("Polling tasks failed.", exc_info=e)
 
                 await asyncio.sleep(self._poll_interval.total_seconds())
+
+    async def _create_context(self, stack: contextlib.AsyncExitStack) -> Context:
+        context = Context()
+        for name, callback in self._fixtures:
+            setattr(context, name, await stack.enter_async_context(callback()))
+        return context
 
     def shutdown(self):
         """Initiates a graceful shutdown"""

@@ -1,4 +1,6 @@
 from enum import Enum
+from typing import Any
+from typing import AsyncGenerator
 from typing import Awaitable
 from typing import Callable
 from typing import NewType
@@ -12,12 +14,16 @@ Lease = NewType("Lease", object)
 
 
 class Context:
-    def __init__(self, *args, **kwargs):
-        pass
+    pass
 
 
 class TaskFunc(Protocol):
     def __call__(self, context: Context) -> Awaitable[None]:
+        ...
+
+
+class FixtureFunc(Protocol):
+    def __call__(self) -> AsyncGenerator[Any, None]:
         ...
 
 

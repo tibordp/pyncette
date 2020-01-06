@@ -234,3 +234,30 @@ async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
     await task
 
     assert counter.call_count == 7
+
+
+@pytest.mark.asyncio
+async def test_fixture(timemachine):
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.fixture()
+    async def hello():
+        counter.entered()
+        yield counter.executed
+        counter.exited()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def successful_task(context: Context) -> None:
+        context.hello()
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.entered.call_count == 1
+    assert counter.executed.call_count == 5
+    assert counter.exited.call_count == 1
