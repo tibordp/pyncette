@@ -9,6 +9,7 @@ from timemachine import TimeMachine
 import pyncette
 from pyncette import Context
 from pyncette import ExecutionMode
+from pyncette import FailureMode
 from pyncette import Pyncette
 
 
@@ -43,7 +44,9 @@ def test_invalid_configuration():
 
     with pytest.raises(ValueError):
 
-        @app.task(execution_mode=ExecutionMode.BEST_EFFORT, commit_on_failure=True)
+        @app.task(
+            execution_mode=ExecutionMode.BEST_EFFORT, failure_mode=FailureMode.UNLOCK
+        )
         def _dummy4(context: Context):
             pass
 
@@ -87,12 +90,12 @@ async def test_successful_task_cronspec(timemachine):
 
 
 @pytest.mark.asyncio
-async def test_failed_task_retried_on_every_tick(timemachine):
+async def test_failed_task_retried_on_every_tick_if_unlock(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
 
-    @app.task(interval=datetime.timedelta(seconds=2))
+    @app.task(interval=datetime.timedelta(seconds=2), failure_mode=FailureMode.UNLOCK)
     async def failing_task(context: Context) -> None:
         counter()
         raise RuntimeError("Oops")
@@ -107,12 +110,35 @@ async def test_failed_task_retried_on_every_tick(timemachine):
 
 
 @pytest.mark.asyncio
+async def test_failed_task_retried_after_lease_over_if_failure_mode_none(timemachine):
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=2),
+        lease_duration=datetime.timedelta(seconds=5),
+    )
+    async def failing_task(context: Context) -> None:
+        counter()
+        raise RuntimeError("Oops")
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=20))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 4
+
+
+@pytest.mark.asyncio
 async def test_failed_task_not_retried_if_commit_on_failure(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
 
-    @app.task(interval=datetime.timedelta(seconds=2), commit_on_failure=True)
+    @app.task(interval=datetime.timedelta(seconds=2), failure_mode=FailureMode.COMMIT)
     async def failing_task(context: Context) -> None:
         counter()
         raise RuntimeError("Oops")
@@ -169,6 +195,29 @@ async def test_locked_while_executing(timemachine):
 
 
 @pytest.mark.asyncio
+async def test_lease_is_taken_over_if_expired(timemachine):
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=2),
+        lease_duration=datetime.timedelta(seconds=2),
+    )
+    async def successful_task(context: Context) -> None:
+        counter()
+        await asyncio.sleep(10)
+
+    task = asyncio.create_task(app.run())
+    await timemachine.step(datetime.timedelta(seconds=10))
+    app.shutdown()
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+
+    assert counter.call_count == 5
+
+
+@pytest.mark.asyncio
 async def test_not_locked_while_executing_if_best_effort_is_used(timemachine):
     app = Pyncette()
 
@@ -196,7 +245,7 @@ async def test_catches_up_with_stale_executions(timemachine):
 
     counter = MagicMock()
 
-    @app.task(interval=datetime.timedelta(seconds=2))
+    @app.task(interval=datetime.timedelta(seconds=2), failure_mode=FailureMode.UNLOCK)
     async def once_failing_task(context: Context) -> None:
         counter()
         if counter.call_count == 1:
@@ -220,7 +269,11 @@ async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
 
     counter = MagicMock()
 
-    @app.task(interval=datetime.timedelta(seconds=2), fast_forward=True)
+    @app.task(
+        interval=datetime.timedelta(seconds=2),
+        fast_forward=True,
+        failure_mode=FailureMode.UNLOCK,
+    )
     async def once_failing_task(context: Context) -> None:
         counter()
         if counter.call_count == 1:

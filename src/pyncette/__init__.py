@@ -2,6 +2,7 @@ __version__ = "0.0.7"
 
 from .model import Context
 from .model import ExecutionMode
+from .model import FailureMode
 from .pyncette import Pyncette
 
-__all__ = ["Pyncette", "ExecutionMode", "Context"]
+__all__ = ["Pyncette", "ExecutionMode", "FailureMode", "Context"]

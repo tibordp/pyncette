@@ -7,6 +7,7 @@ import pytest
 
 from pyncette import Context
 from pyncette import ExecutionMode
+from pyncette import FailureMode
 from pyncette import Pyncette
 from pyncette.repository.redis import redis_repository
 
@@ -37,7 +38,11 @@ async def test_failing_task_interval(monkeypatch):
 
     counter = MagicMock()
 
-    @app.task(interval=datetime.timedelta(seconds=5), name=str(uuid4()))
+    @app.task(
+        interval=datetime.timedelta(seconds=5),
+        name=str(uuid4()),
+        failure_mode=FailureMode.UNLOCK,
+    )
     async def successful_task(context: Context) -> None:
         counter()
         raise RuntimeError("Oops")
