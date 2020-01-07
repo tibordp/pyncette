@@ -20,7 +20,7 @@ project = "Pyncette"
 year = "2019"
 author = "Tibor Djurica Potpara"
 copyright = "{0}, {1}".format(year, author)
-version = release = "0.0.7"
+version = release = "0.0.8"
 
 pygments_style = "trac"
 templates_path = ["."]
