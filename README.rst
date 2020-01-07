@@ -57,6 +57,7 @@ Installation
 ::
 
     pip install pyncette
+    # Or, for Redis support: pip install pyncette[redis] 
 
 You can also install the in-development version with::
 
@@ -76,33 +77,32 @@ Simple in-memory cron (does not persist state)
 
 .. code:: python
 
-    from pyncette import Pyncette
+    from pyncette import Pyncette, Context
 
     app = Pyncette()
 
-    @app.cron(schedule='* * * * *')
-    async def foo():
+    @app.task(schedule='* * * * *')
+    async def foo(context: Context):
         print('This will run every minute')
 
-    if __name__ = '__main__':
+    if __name__ == '__main__':
         app.main()
-
-    # alternatively asyncio.run(app.run())
+        # alternatively asyncio.run(app.run())
 
 Persistent distributed cron using Redis (coordinates execution with parallel instances and survives restarts)
 
 .. code:: python
 
-    from pyncette import Pyncette
+    from pyncette import Pyncette, Context
     from pyncette.repository.redis import redis_repository
 
     app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost')
 
-    @app.cron(schedule='* * * * *')
-    async def foo():
-        print('This will run every minute')
+    @app.task(schedule='* * * * * */10')
+    async def foo(context: Context):
+        print('This will run every 10 seconds')
 
-    if __name__ = '__main__':
+    if __name__ == '__main__':
         app.main()
 
 

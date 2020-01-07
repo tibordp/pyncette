@@ -17,4 +17,4 @@ include README.rst
 
 include tox.ini .travis.yml .appveyor.yml
 
-global-exclude *.py[cod] __pycache__/* *.so *.dylib .mypy_cache/** .vscode .vscode/**
+global-exclude *.py[cod] __pycache__/* *.so *.dylib .mypy_cache/** .vscode .vscode/** _build/**

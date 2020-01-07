@@ -16,6 +16,7 @@ from typing import Tuple
 from .model import Context
 from .model import Decorator
 from .model import ExecutionMode
+from .model import FailureMode
 from .model import FixtureFunc
 from .model import Lease
 from .model import ResultType
@@ -42,14 +43,12 @@ class Pyncette:
     _shutting_down: bool
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _repository_factory: RepositoryFactory
-    _commit_on_failure: bool
     _poll_interval: datetime.timedelta
     _configuration: Dict[str, Any]
 
     def __init__(
         self,
         repository_factory: RepositoryFactory = in_memory_repository,
-        commit_on_failure: bool = False,
         poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
         **kwargs,
     ):
@@ -112,9 +111,9 @@ class Pyncette:
         assert lease is not None
         utc_now = current_time()
         try:
-            if execution_suceeded or task.commit_on_failure:
+            if execution_suceeded or task.failure_mode == FailureMode.COMMIT:
                 await repository.commit_task(utc_now, task, lease)
-            else:
+            elif task.failure_mode == FailureMode.UNLOCK:
                 await repository.unlock_task(utc_now, task, lease)
         except Exception as e:
             logger.warning(

@@ -39,3 +39,11 @@ class ExecutionMode(Enum):
 
     RELIABLE = 0
     BEST_EFFORT = 1
+
+
+class FailureMode(Enum):
+    """What should happen when a task fails."""
+
+    NONE = 0
+    UNLOCK = 1
+    COMMIT = 2

@@ -4,6 +4,7 @@ from typing import Optional
 from croniter import croniter
 
 from .model import ExecutionMode
+from .model import FailureMode
 from .model import TaskFunc
 
 
@@ -20,7 +21,7 @@ class Task:
     schedule: str
     interval: datetime.timedelta
     fast_forward: bool
-    commit_on_failure: bool
+    failure_mode: FailureMode
     execution_mode: ExecutionMode
     lease_duration: datetime.timedelta
 
@@ -31,7 +32,7 @@ class Task:
         self.schedule = kwargs.get("schedule", None)
         self.interval = kwargs.get("interval", None)
         self.fast_forward = kwargs.get("fast_forward", False)
-        self.commit_on_failure = kwargs.get("commit_on_failure", False)
+        self.failure_mode = kwargs.get("failure_mode", FailureMode.NONE)
         self.execution_mode = kwargs.get("execution_mode", ExecutionMode.RELIABLE)
         self.lease_duration = kwargs.get(
             "lease_duration", datetime.timedelta(seconds=60)
@@ -40,9 +41,12 @@ class Task:
         self._validate()
 
     def _validate(self):
-        if self.execution_mode == ExecutionMode.BEST_EFFORT and self.commit_on_failure:
+        if (
+            self.execution_mode == ExecutionMode.BEST_EFFORT
+            and self.failure_mode != FailureMode.NONE
+        ):
             raise ValueError(
-                "commit_on_failure is not available when execution_mode is set to BEST_EFFORT"
+                "failure_mode is not applicable when execution_mode is BEST_EFFORT"
             )
         if self.schedule is not None and self.interval is not None:
             raise ValueError("schedule and interval are mutually exclusive")
