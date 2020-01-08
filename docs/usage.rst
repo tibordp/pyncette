@@ -99,6 +99,26 @@ Failure behavior can be specified with ``failure_mode`` parameter::
 - ``FailureMode.UNLOCK`` the task will be immediately unlocked if an exception is thrown, so it will be retried on the next tick.
 - ``FailureMode.COMMIT`` treat the exception as a success and schedule the next execution in case the exception is thrown.
 
+Timezone support
+++++++++++++++++
+
+Pyncette is timezone-aware, the timezone for a task can be specified by ``timezone`` parameter:
+
+.. code-block:: python
+
+    from pyncette import ExecutionMode
+
+    @app.task(schedule="0 12 * * *", timezone="Europe/Dublin") 
+    async def task1(context: Context):
+        print(f"Hello from Dublin!")
+
+    @app.task(schedule="0 12 * * *", timezone="UTC+12") 
+    async def task2(context: Context):
+        print(f"Hello from Камча́тка!")
+
+The accepted values are all that :meth:`dateutil.tz.gettz` accepts. 
+
+.. caution:: There is a known issue where the execution is offset by 1 hour in the day DST takes effect. See `details here <https://github.com/taichino/croniter/issues/116>`_
 
 Task parameters
 ++++++++++++++++

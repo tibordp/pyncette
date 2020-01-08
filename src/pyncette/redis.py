@@ -8,7 +8,6 @@ from typing import AsyncIterator
 from typing import Dict
 from typing import List
 from typing import Optional
-from typing import Tuple
 from typing import cast
 
 import aioredis
@@ -16,6 +15,7 @@ import aioredis
 from .errors import PyncetteException
 from .model import ExecutionMode
 from .model import Lease
+from .model import PollResponse
 from .model import ResultType
 from .repository import Repository
 from .task import Task
@@ -195,6 +195,7 @@ class RedisRepository(Repository):
             if task_spec["interval"] is not None
             else None,
             **task_spec["extra_args"],
+            timezone=task_spec["timezone"],
         )
 
         task._last_lease = task_data  # type: ignore
@@ -212,6 +213,7 @@ class RedisRepository(Repository):
                     "interval": task.interval.total_seconds()
                     if task.interval is not None
                     else None,
+                    "timezone": task.timezone,
                     "extra_args": task.extra_args,
                 }
             ),
@@ -233,7 +235,7 @@ class RedisRepository(Repository):
 
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task
-    ) -> Tuple[ResultType, Optional[Lease]]:
+    ) -> PollResponse:
         # Nominally, we need at least two round-trips to Redis since the next execute_after is calculated
         # in Python code due to extra flexibility. This is why we have optimistic locking below to ensure that
         # the next execution time was calculated using a correct base if another process modified it in between.
@@ -265,7 +267,11 @@ class RedisRepository(Repository):
             task._last_lease = response  # type: ignore
 
             if response.result != ResultType.LEASE_MISMATCH:
-                return (response.result, Lease(response))
+                return PollResponse(
+                    result=response.result,
+                    scheduled_at=execute_after,
+                    lease=Lease(response),
+                )
             else:
                 logger.debug(f"Lease mismatch, retrying.")
                 execute_after = response.execute_after

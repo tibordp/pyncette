@@ -1,9 +1,12 @@
+import datetime
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
 from typing import NewType
+from typing import Optional
 from typing import TypeVar
 
 from typing_extensions import Protocol
@@ -15,9 +18,8 @@ TaskName = NewType("TaskName", str)
 
 
 class Context:
-    """Task execution context. This class has dynamic attributes."""
-
-    pass
+    """Task execution context. This class can have dynamic attributes."""
+    scheduled_at: datetime.datetime
 
 
 class TaskFunc(Protocol):
@@ -53,3 +55,10 @@ class FailureMode(Enum):
     NONE = 0
     UNLOCK = 1
     COMMIT = 2
+
+
+@dataclass
+class PollResponse:
+    result: ResultType
+    scheduled_at: datetime.datetime
+    lease: Optional[Lease]
