@@ -144,7 +144,9 @@ class PyncetteContext:
             poll_response = await self._repository.poll_task(utc_now, task)
             if poll_response.result == ResultType.READY:
                 logger.info(f"Executing task {task} with {task.extra_args}")
-                self._scheduler.spawn_task(self._execute_task(task, poll_response))
+                await self._scheduler.spawn_task(
+                    self._execute_task(task, poll_response)
+                )
             elif poll_response.result == ResultType.PENDING:
                 logger.debug(
                     f"Not executing task {task}, because it is not yet scheduled."
@@ -176,18 +178,21 @@ class Pyncette:
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _repository_factory: RepositoryFactory
     _poll_interval: datetime.timedelta
+    _concurrency_limit: int
     _configuration: Dict[str, Any]
 
     def __init__(
         self,
         repository_factory: RepositoryFactory = in_memory_repository,
         poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
+        concurrency_limit: int = 100,
         **kwargs: Any,
     ) -> None:
         self._concrete_tasks = []
         self._dynamic_tasks = []
         self._fixtures = []
         self._poll_interval = poll_interval
+        self._concurrency_limit = concurrency_limit
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
@@ -250,7 +255,9 @@ class Pyncette:
         """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration
-        ) as repository, DefaultScheduler() as scheduler, contextlib.AsyncExitStack() as stack:
+        ) as repository, DefaultScheduler(
+            self._concurrency_limit
+        ) as scheduler, contextlib.AsyncExitStack() as stack:
             root_context = await self._create_root_context(repository, stack)
 
             yield PyncetteContext(self, repository, scheduler, root_context)

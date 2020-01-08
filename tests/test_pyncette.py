@@ -480,3 +480,27 @@ async def test_timezone_support(timemachine):
         ctx.shutdown()
         await timemachine.step(datetime.timedelta(minutes=10))
         await task
+
+
+@pytest.mark.asyncio
+async def test_concurrency_limit(timemachine,):
+    app = Pyncette(concurrency_limit=1)
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=1), execution_mode=ExecutionMode.BEST_EFFORT
+    )
+    async def long_running_task(context: Context) -> None:
+        counter.execute()
+        await asyncio.sleep(5)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        assert counter.execute.call_count == 2
+        ctx.shutdown()
+        await timemachine.step(datetime.timedelta(seconds=10))
+        await task
+
+    assert counter.execute.call_count == 3  # One extra call after
