@@ -18,12 +18,14 @@ from typing import Optional
 from typing import Tuple
 from typing import cast
 
+import dateutil.tz
+
 from .model import Context
 from .model import Decorator
 from .model import ExecutionMode
 from .model import FailureMode
 from .model import FixtureFunc
-from .model import Lease
+from .model import PollResponse
 from .model import ResultType
 from .model import TaskFunc
 from .model import TaskName
@@ -37,7 +39,9 @@ logger = logging.getLogger(__name__)
 
 
 def _current_time() -> datetime.datetime:
-    return datetime.datetime.utcnow()
+    u = datetime.datetime.utcnow()
+    u = u.replace(tzinfo=dateutil.tz.UTC)
+    return u
 
 
 class PyncetteContext:
@@ -81,27 +85,36 @@ class PyncetteContext:
 
         await self._repository.unregister_task(utc_now, concrete_task)
 
-    async def _execute_task(self, task: Task, lease: Optional[Lease]) -> None:
-        try:
-            context = copy.copy(self._root_context)
-            context.__dict__.update(task.extra_args)
+    def _populate_context(self, task: Task, poll_response: PollResponse) -> Context:
+        context = copy.copy(self._root_context)
+        context.__dict__.update(**task.extra_args)
+        tz = (
+            dateutil.tz.UTC
+            if task.timezone is None
+            else dateutil.tz.gettz(task.timezone)
+        )
+        context.scheduled_at = poll_response.scheduled_at.astimezone(tz)
+        return context
 
+    async def _execute_task(self, task: Task, poll_response: PollResponse) -> None:
+        try:
+            context = self._populate_context(task, poll_response)
             await task(context)
             execution_suceeded = True
         except Exception as e:
             logger.warning(f"Task {task} failed", exc_info=e)
             execution_suceeded = False
 
-        if task.execution_mode == ExecutionMode.BEST_EFFORT:
+        if task.execution_mode == ExecutionMode.AT_MOST_ONCE:
             return
 
-        assert lease is not None
+        assert poll_response.lease is not None
         utc_now = _current_time()
         try:
             if execution_suceeded or task.failure_mode == FailureMode.COMMIT:
-                await self._repository.commit_task(utc_now, task, lease)
+                await self._repository.commit_task(utc_now, task, poll_response.lease)
             elif task.failure_mode == FailureMode.UNLOCK:
-                await self._repository.unlock_task(utc_now, task, lease)
+                await self._repository.unlock_task(utc_now, task, poll_response.lease)
         except Exception as e:
             logger.warning(
                 "Failed to commit task {task}, it will likely execute again.",
@@ -114,22 +127,31 @@ class PyncetteContext:
         for task in self._app._concrete_tasks:
             yield task
         for task in self._app._dynamic_tasks:
-            for concrete_task in await self._repository.query_task(utc_now, task):
-                yield concrete_task
+            while not self._shutting_down:
+                query_response = await self._repository.query_task(utc_now, task)
+                for concrete_task in query_response.tasks:
+                    yield concrete_task
+
+                if not query_response.has_more:
+                    break
+
+                logger.debug(f"Dynamic {task} has more due instances, looping.")
 
     async def _tick(self) -> None:
         utc_now = _current_time()
 
         async for task in self._get_active_tasks(utc_now):
-            poll_result, lease = await self._repository.poll_task(utc_now, task)
-            if poll_result == ResultType.READY:
+            poll_response = await self._repository.poll_task(utc_now, task)
+            if poll_response.result == ResultType.READY:
                 logger.info(f"Executing task {task} with {task.extra_args}")
-                self._scheduler.spawn_task(self._execute_task(task, lease))
-            elif poll_result == ResultType.PENDING:
+                await self._scheduler.spawn_task(
+                    self._execute_task(task, poll_response)
+                )
+            elif poll_response.result == ResultType.PENDING:
                 logger.debug(
                     f"Not executing task {task}, because it is not yet scheduled."
                 )
-            elif poll_result == ResultType.LOCKED:
+            elif poll_response.result == ResultType.LOCKED:
                 logger.debug(f"Not executing task {task}, because it is locked.")
 
     async def run(self) -> None:
@@ -156,18 +178,21 @@ class Pyncette:
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _repository_factory: RepositoryFactory
     _poll_interval: datetime.timedelta
+    _concurrency_limit: int
     _configuration: Dict[str, Any]
 
     def __init__(
         self,
         repository_factory: RepositoryFactory = in_memory_repository,
         poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
+        concurrency_limit: int = 100,
         **kwargs: Any,
     ) -> None:
         self._concrete_tasks = []
         self._dynamic_tasks = []
         self._fixtures = []
         self._poll_interval = poll_interval
+        self._concurrency_limit = concurrency_limit
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
@@ -230,8 +255,10 @@ class Pyncette:
         """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration
-        ) as repository, DefaultScheduler() as scheduler, contextlib.AsyncExitStack() as stack:
-            root_context = await self._create_context(repository, stack)
+        ) as repository, DefaultScheduler(
+            self._concurrency_limit
+        ) as scheduler, contextlib.AsyncExitStack() as stack:
+            root_context = await self._create_root_context(repository, stack)
 
             yield PyncetteContext(self, repository, scheduler, root_context)
 
@@ -246,7 +273,7 @@ class Pyncette:
 
         signal.signal(signal.SIGINT, handler)
 
-    async def _create_context(
+    async def _create_root_context(
         self, repository: Repository, stack: contextlib.AsyncExitStack
     ) -> Context:
         context = Context()

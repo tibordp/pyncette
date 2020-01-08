@@ -2,6 +2,7 @@ import asyncio
 import datetime
 from unittest.mock import MagicMock
 
+import dateutil.tz
 import pytest
 from timemachine import TimeMachine
 
@@ -12,7 +13,9 @@ from pyncette import Pyncette
 
 @pytest.fixture
 def timemachine(monkeypatch):
-    timemachine = TimeMachine(datetime.datetime(2019, 1, 1, 0, 0, 0))
+    timemachine = TimeMachine(
+        datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC)
+    )
     monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
     monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
     return timemachine

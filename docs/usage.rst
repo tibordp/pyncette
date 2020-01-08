@@ -77,7 +77,7 @@ If the task is run in a best-effort mode, locking will not be employed, and the 
 
     from pyncette import ExecutionMode
 
-    @app.task(interval=datetime.timedelta(seconds=10), execution_mode=ExecutionMode.BEST_EFFORT)
+    @app.task(interval=datetime.timedelta(seconds=10), execution_mode=ExecutionMode.AT_MOST_ONCE)
     async def every_10_seconds(context: Context):
         print("Ping")
 
@@ -99,6 +99,26 @@ Failure behavior can be specified with ``failure_mode`` parameter::
 - ``FailureMode.UNLOCK`` the task will be immediately unlocked if an exception is thrown, so it will be retried on the next tick.
 - ``FailureMode.COMMIT`` treat the exception as a success and schedule the next execution in case the exception is thrown.
 
+Timezone support
+++++++++++++++++
+
+Pyncette is timezone-aware, the timezone for a task can be specified by ``timezone`` parameter:
+
+.. code-block:: python
+
+    from pyncette import ExecutionMode
+
+    @app.task(schedule="0 12 * * *", timezone="Europe/Dublin") 
+    async def task1(context: Context):
+        print(f"Hello from Dublin!")
+
+    @app.task(schedule="0 12 * * *", timezone="UTC+12") 
+    async def task2(context: Context):
+        print(f"Hello from Камча́тка!")
+
+The accepted values are all that :meth:`dateutil.tz.gettz` accepts. 
+
+.. caution:: There is a known issue where the execution is offset by 1 hour in the day DST takes effect. See `details here <https://github.com/taichino/croniter/issues/116>`_
 
 Task parameters
 ++++++++++++++++
@@ -227,3 +247,7 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
 
     This will cause that only a specified number of dynamic tasks are scheduled for execution during a single tick, as well as allow potential multiple instances of the same app to load balance effectively.
 
+Performance
+-----------
+
+Tasks are executed in parallel. If you have a lot of long running tasks, you can set ``concurrency_limit`` in :class:`~pyncette.Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting ``concurrency_limit`` to 1 is equivalent of serializing the execution of all the taks.

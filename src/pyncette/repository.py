@@ -8,14 +8,14 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import DefaultDict
 from typing import Dict
-from typing import List
 from typing import Optional
-from typing import Tuple
 
 from typing_extensions import Protocol
 
 from .model import ExecutionMode
 from .model import Lease
+from .model import PollResponse
+from .model import QueryResponse
 from .model import ResultType
 from .model import TaskName
 from .task import Task
@@ -27,7 +27,7 @@ class Repository(abc.ABC):
     """Abstract base class representing a store for Pyncette tasks"""
 
     @abc.abstractmethod
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> List[Task]:
+    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
         pass
 
@@ -42,9 +42,7 @@ class Repository(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task
-    ) -> Tuple[ResultType, Optional[Lease]]:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task) -> PollResponse:
         """Polls the task to determine whether it is ready for execution"""
         pass
 
@@ -80,8 +78,10 @@ class InMemoryRepository(Repository):
         self._data = {}
         self._dynamic_tasks = defaultdict(dict)
 
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> List[Task]:
-        return list(self._dynamic_tasks[task.name].values())
+    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+        return QueryResponse(
+            tasks=list(self._dynamic_tasks[task.name].values()), has_more=False
+        )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         assert task.parent_task is not None
@@ -91,9 +91,7 @@ class InMemoryRepository(Repository):
         assert task.parent_task is not None
         self._dynamic_tasks[task.parent_task.name].pop(task.name, None)
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task
-    ) -> Tuple[ResultType, Optional[Lease]]:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task) -> PollResponse:
         task_data = self._data.get(task.name, None)
 
         if task_data is None:
@@ -105,23 +103,31 @@ class InMemoryRepository(Repository):
         )
 
         locked_until = task_data.get("locked_until", None)
+        lease: Optional[Lease] = None
+        result: ResultType
+        scheduled_at = task_data["execute_after"]
+
         if locked_until is not None and locked_until > utc_now:
-            return (ResultType.LOCKED, None)
+            result = ResultType.LOCKED
+        elif (
+            scheduled_at <= utc_now
+            and task.execution_mode == ExecutionMode.AT_MOST_ONCE
+        ):
+            task_data["locked_until"] = None
+            task_data["execute_after"] = task.get_next_execution(utc_now, scheduled_at)
+            result = ResultType.READY
+        elif (
+            scheduled_at <= utc_now
+            and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
+        ):
+            lease = Lease(object())
+            task_data["locked_until"] = utc_now + task.lease_duration
+            task_data["locked_by"] = lease
+            result = ResultType.READY
+        else:
+            result = ResultType.PENDING
 
-        if task_data["execute_after"] <= utc_now:
-            if task.execution_mode == ExecutionMode.BEST_EFFORT:
-                task_data["locked_until"] = None
-                task_data["execute_after"] = task.get_next_execution(
-                    utc_now, task_data["execute_after"]
-                )
-                return (ResultType.READY, None)
-            elif task.execution_mode == ExecutionMode.RELIABLE:
-                lease = Lease(object())
-                task_data["locked_until"] = utc_now + task.lease_duration
-                task_data["locked_by"] = lease
-                return (ResultType.READY, lease)
-
-        return (ResultType.PENDING, None)
+        return PollResponse(result=result, scheduled_at=scheduled_at, lease=lease,)
 
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease

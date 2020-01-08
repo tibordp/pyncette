@@ -69,6 +69,10 @@ setup(
         # eg: 'keyword1', 'keyword2', 'keyword3',
     ],
     python_requires=">=3.7",
-    install_requires=["typing-extensions>=3.7.4.1", "croniter>=0.3.30"],
+    install_requires=[
+        "typing-extensions>=3.7.4.1",
+        "croniter>=0.3.31",
+        "python-dateutil",
+    ],
     extras_require={"redis": ["aioredis>=1.3.1"]},
 )
