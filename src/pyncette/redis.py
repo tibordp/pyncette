@@ -76,8 +76,10 @@ class RedisRepository(Repository):
 
     _QUERY_LUA = """
     local utc_now, limit, incoming_locked_until = unpack(ARGV)
-    local tasksets = redis.call('zrangebylex', KEYS[1], '-', '(' .. utc_now .. '`', 'LIMIT', 0, limit)
-    local results = {}
+    limit = tonumber(limit)
+
+    local tasksets = redis.call('zrangebylex', KEYS[1], '-', '(' .. utc_now .. '`', 'LIMIT', 0, limit + 1)
+    local results = { "READY" }
 
     local function getTasksetKey(key, a1, a2)
       if not a1 or a1 < a2 then
@@ -96,7 +98,11 @@ class RedisRepository(Repository):
         redis.call('hmset', task_name, 'version', version, 'locked_until', incoming_locked_until)
         redis.call('zadd', KEYS[1], 0, getTasksetKey(task_name, locked_until, execute_after))
 
-        results[key] = { "READY", version, execute_after, locked_until, task_spec }
+        results[key + 1] = { "READY", version, execute_after, locked_until, task_spec }
+        if key == limit then
+            results[1] = "HAS_MORE"
+            break
+        end
     end
 
     return results
@@ -220,19 +226,16 @@ class RedisRepository(Repository):
             keys=[
                 f"pyncette:{self._namespace}:taskset:{task.name if task else '__global__'}"
             ],
-            args=[
-                utc_now.isoformat(),
-                self._batch_size + 1,
-                new_locked_until.isoformat(),
-            ],
+            args=[utc_now.isoformat(), self._batch_size, new_locked_until.isoformat(),],
         )
-        logger.debug(f"query_lua script returned {response}")
+        logger.debug(f"query_lua script returned [{self._batch_size}] {response}")
+
         return QueryResponse(
             tasks=[
                 self._create_dynamic_task(task, response_data)
-                for response_data in response[: self._batch_size]
+                for response_data in response[1:]
             ],
-            has_more=len(response) > self._batch_size,
+            has_more=response[0] == b"HAS_MORE",
         )
 
     def _create_dynamic_task(self, task: Task, response_data: List[bytes]) -> Task:

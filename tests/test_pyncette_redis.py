@@ -164,3 +164,43 @@ async def test_dynamic_cron_timezones(monkeypatch):
     counter.bill.assert_called_with(datetime.timedelta(hours=1))
     counter.steve.assert_called_with(datetime.timedelta(hours=-2))
     counter.tibor.assert_called_with(datetime.timedelta())
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_dynamic_batch_size(monkeypatch):
+    app = Pyncette(
+        redis_url="redis://localhost",
+        redis_namespace=str(uuid4()),
+        repository_factory=redis_repository,
+        redis_batch_size=10,
+    )
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        getattr(counter, context.username)()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await asyncio.gather(
+            ctx.schedule_task(
+                hello, "1", interval=datetime.timedelta(seconds=1), username="bill"
+            ),
+            ctx.schedule_task(
+                hello, "2", interval=datetime.timedelta(seconds=1), username="steve"
+            ),
+            ctx.schedule_task(
+                hello, "3", interval=datetime.timedelta(seconds=1), username="tibor"
+            ),
+        )
+        await asyncio.sleep(2.5)
+        await ctx.unschedule_task(hello, "1")
+        await asyncio.sleep(8)
+        ctx.shutdown()
+        await task
+
+    assert counter.bill.call_count == 1
+    assert counter.steve.call_count == 3
+    assert counter.tibor.call_count == 2
