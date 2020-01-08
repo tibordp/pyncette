@@ -56,8 +56,7 @@ Installation
 
 ::
 
-    pip install pyncette
-    # Or, for Redis support: pip install pyncette[redis] 
+    pip install pyncette[redis] 
 
 You can also install the in-development version with::
 
@@ -87,7 +86,6 @@ Simple in-memory cron (does not persist state)
 
     if __name__ == '__main__':
         app.main()
-        # alternatively asyncio.run(app.run())
 
 Persistent distributed cron using Redis (coordinates execution with parallel instances and survives restarts)
 
@@ -112,6 +110,10 @@ Development
 To run the all tests run::
 
     tox
+
+To run just the unit tests (excluding integration tests)::
+
+    tox -e py37  # or py38 
 
 Note, to combine the coverage data from all the tox environments run:
 

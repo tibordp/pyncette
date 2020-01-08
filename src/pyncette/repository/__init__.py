@@ -1,6 +1,8 @@
 import abc
 import datetime
+from typing import Any
 from typing import AsyncContextManager
+from typing import List
 from typing import Optional
 from typing import Tuple
 
@@ -13,6 +15,21 @@ from pyncette.task import Task
 
 class Repository(abc.ABC):
     """Abstract base class representing a store for Pyncette tasks"""
+
+    @abc.abstractmethod
+    async def query_task(self, utc_now: datetime.datetime, task: Task) -> List[Task]:
+        """Queries the dynamic tasks for execution"""
+        pass
+
+    @abc.abstractmethod
+    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+        """Registers a dynamic task"""
+        pass
+
+    @abc.abstractmethod
+    async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
+        """Deregisters a dynamic task implementation"""
+        pass
 
     @abc.abstractmethod
     async def poll_task(
@@ -39,7 +56,7 @@ class Repository(abc.ABC):
 class RepositoryFactory(Protocol):
     """A factory context manager for creating a repository"""
 
-    def __call__(self, **kwargs) -> AsyncContextManager[Repository]:
+    def __call__(self, **kwargs: Any) -> AsyncContextManager[Repository]:
         ...
 
 

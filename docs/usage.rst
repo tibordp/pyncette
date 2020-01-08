@@ -23,7 +23,7 @@ Running the main loop
 
 The usual use case is that Pyncette runs as its own process, so the standard way to start the main loop is with :meth:`~pyncette.Pyncette.main` method of the :class:`~pyncette.Pyncette`. This sets up the logging to standard output and signal handler allowing for graceful shutdown (first SIGINT initiates the graceful shutdown and the second one terminates the process).
 
-If Pyncette is run alongside other code, :meth:`~pyncette.Pyncette.run` can be used::
+If Pyncette is run alongside other code or for customization, :meth:`~pyncette.Pyncette.create` can be used to initialize the runtime environment and then the main loop can be run with :meth:`~pyncette.PyncetteContext.run`::
 
     import asyncio
     from pyncette import Pyncette
@@ -31,9 +31,9 @@ If Pyncette is run alongside other code, :meth:`~pyncette.Pyncette.run` can be u
     app = Pyncette()
 
     ...
-
-    asyncio.run(app.run())
-
+    
+    async with app.create() as ctx:
+        await ctx.run()
 
 Specifying the schedule
 -----------------------
@@ -58,9 +58,8 @@ The other way is with an interval::
     async def every_12_seconds(context: Context):
         ...
 
-
-Execution modes
----------------
+Customizing tasks
+-----------------
 
 Pyncette supports multiple different execution modes which provide different levels of reliability guarantees, depending on the nature of the task.
 
@@ -99,6 +98,27 @@ Failure behavior can be specified with ``failure_mode`` parameter::
 - ``FailureMode.NONE`` the task will stay locked until the lease expires. This is the default.
 - ``FailureMode.UNLOCK`` the task will be immediately unlocked if an exception is thrown, so it will be retried on the next tick.
 - ``FailureMode.COMMIT`` treat the exception as a success and schedule the next execution in case the exception is thrown.
+
+
+Task parameters
+++++++++++++++++
+
+The :meth:`~pyncette.Pyncette.task` decorator accepts an arbitrary number of additional parameters, which are available through the ``context`` parameter
+
+.. code-block:: python
+
+    from pyncette import ExecutionMode
+
+    # If we use multiple decorators on the same coroutine, we must explicitely provide the name
+    @app.task(name="task1", interval=datetime.timedelta(seconds=10), username="abra") 
+    @app.task(name="task2", interval=datetime.timedelta(seconds=20), username="kadabra")
+    @app.task(name="task3", interval=datetime.timedelta(seconds=30), username="alakazam")
+    async def task(context: Context):
+        print(f"{context.username}")
+
+This allows for parametrized tasks with multiple decorators, this is an essential feature needed to support :ref:`dynamic-tasks`.
+
+.. note:: There is a restriction that all the values of the parameters must be JSON-serializable, since they are persisted in storage when dynamic tasks are used.
 
 Fixtures
 --------
@@ -158,3 +178,52 @@ Redis can be enabled by passing :meth:`~pyncette.repository.redis.redis_reposito
 Optionally, the tasks can be namespaced if the Redis server is shared among different Pyncette apps::
 
     app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost', redis_namespace='my_super_app')
+
+.. _dynamic-tasks:
+
+Dynamic tasks
+-------------
+
+Pyncette supports a use case where the tasks are not necessarily known in advance with :meth:`~pyncette.PyncetteContext.schedule_task`.
+
+.. code-block:: python
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        print(f"Hello {context.username}")
+
+    async with app.create() as ctx:
+        await asyncio.gather(
+            ctx.schedule_task(hello, "bill_task", schedule="0 * * * *", username="bill"),
+            ctx.schedule_task(hello, "steve_task", schedule="20 * * * *", username="steve"),
+            ctx.schedule_task(hello, "john_task", schedule="40 * * * *", username="john"),
+        )
+        await ctx.run()
+
+When persistence is used, the schedules and task parameters of the are persisted alongside the execution data, which allows the tasks to be registered and unregistered at will. 
+
+An example use case is a web application where every user can have something happen at their chosen schedule. Polling is relatively efficient, since the concrete instances of the dynamic class are only loaded from the storage if the are already due, instead of being polled all the time. 
+
+The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule_task`
+
+.. code-block:: python
+
+    ...
+
+    async with app.create() as ctx:
+        await ctx.schedule_task(hello, "bill_task", schedule="0 * * * *", username="bill")
+        await ctx.unschedule_task(hello, "bill_task")
+        await ctx.run()
+
+.. note::
+
+    If the number of dynamic tasks is large, it is a good idea to limit the batch size::
+
+        app = Pyncette(
+            repository_factory=redis_repository, 
+            redis_url='redis://localhost', 
+            batch_size=100
+        )
+
+    This will cause that only a specified number of dynamic tasks are scheduled for execution during a single tick, as well as allow potential multiple instances of the same app to load balance effectively.
+

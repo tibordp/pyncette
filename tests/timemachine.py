@@ -6,6 +6,7 @@ logger = logging.getLogger(__name__)
 
 
 async def defer():
+    """Schedules the continuation to run after all the currently queued continuations in the event loop"""
     future = asyncio.Future()
     loop = asyncio.get_event_loop()
     loop.call_soon(future.set_result, None)
