@@ -29,7 +29,7 @@ from .model import TaskFunc
 from .model import TaskName
 from .repository import Repository
 from .repository import RepositoryFactory
-from .repository.in_memory import in_memory_repository
+from .repository import in_memory_repository
 from .scheduler import DefaultScheduler
 from .task import Task
 

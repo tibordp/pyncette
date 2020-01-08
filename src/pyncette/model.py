@@ -11,11 +11,12 @@ from typing_extensions import Protocol
 T = TypeVar("T")
 Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
-
 TaskName = NewType("TaskName", str)
 
 
 class Context:
+    """Task execution context. This class has dynamic attributes."""
+
     pass
 
 
@@ -30,6 +31,8 @@ class FixtureFunc(Protocol):
 
 
 class ResultType(Enum):
+    """Status returned by polling the task"""
+
     MISSING = 0
     PENDING = 1
     READY = 2

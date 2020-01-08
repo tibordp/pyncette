@@ -13,6 +13,7 @@ extensions = [
     "sphinx.ext.napoleon",
     "sphinx.ext.todo",
     "sphinx.ext.viewcode",
+    "sphinx_autodoc_typehints",
 ]
 source_suffix = ".rst"
 master_doc = "index"

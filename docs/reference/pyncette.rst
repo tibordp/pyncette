@@ -1,9 +1,23 @@
-pyncette
-========
+pyncette package
+================
 
-.. testsetup::
+Submodules
+----------
 
-    from pyncette import *
+.. toctree::
+
+   pyncette.errors
+   pyncette.model
+   pyncette.pyncette
+   pyncette.redis
+   pyncette.repository
+   pyncette.scheduler
+   pyncette.task
+
+Module contents
+---------------
 
 .. automodule:: pyncette
-    :members:
+   :members:
+   :undoc-members:
+   :show-inheritance:

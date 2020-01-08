@@ -159,12 +159,12 @@ Enabling persistence allows the aplication to recover from restarts as well as t
 Redis
 +++++
 
-Redis can be enabled by passing :meth:`~pyncette.repository.redis.redis_repository` as ``repository_factory`` parameter to the :class:`~pyncette.Pyncette` constructor.
+Redis can be enabled by passing :meth:`~pyncette.redis.redis_repository` as ``repository_factory`` parameter to the :class:`~pyncette.Pyncette` constructor.
 
 .. code-block:: py
 
     from pyncette import Pyncette, Context
-    from pyncette.repository.redis import redis_repository
+    from pyncette.redis import redis_repository
 
     app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost')
 
@@ -222,7 +222,7 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
         app = Pyncette(
             repository_factory=redis_repository, 
             redis_url='redis://localhost', 
-            batch_size=100
+            redis_batch_size=100
         )
 
     This will cause that only a specified number of dynamic tasks are scheduled for execution during a single tick, as well as allow potential multiple instances of the same app to load balance effectively.

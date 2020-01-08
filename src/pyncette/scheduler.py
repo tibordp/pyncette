@@ -10,6 +10,8 @@ from typing import Type
 
 
 class DefaultScheduler(contextlib.AbstractAsyncContextManager):
+    """Manages the spawned tasks running in background"""
+
     _tasks: Dict[object, Awaitable]
 
     def __init__(self) -> None:

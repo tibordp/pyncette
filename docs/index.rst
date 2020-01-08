@@ -3,12 +3,12 @@ Contents
 ========
 
 .. toctree::
-   :maxdepth: 2
+   :maxdepth: 4
 
    readme
    installation
    usage
-   reference/index
+   reference/pyncette
    contributing
    authors
    changelog
