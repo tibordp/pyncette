@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import Any
-from typing import AsyncGenerator
+from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
 from typing import NewType
@@ -11,6 +11,8 @@ from typing_extensions import Protocol
 T = TypeVar("T")
 Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
+
+TaskName = NewType("TaskName", str)
 
 
 class Context:
@@ -23,15 +25,16 @@ class TaskFunc(Protocol):
 
 
 class FixtureFunc(Protocol):
-    def __call__(self) -> AsyncGenerator[Any, None]:
+    def __call__(self) -> AsyncIterator[Any]:
         ...
 
 
 class ResultType(Enum):
-    PENDING = 0
-    READY = 1
-    LOCKED = 2
-    LEASE_MISMATCH = 3
+    MISSING = 0
+    PENDING = 1
+    READY = 2
+    LOCKED = 3
+    LEASE_MISMATCH = 4
 
 
 class ExecutionMode(Enum):

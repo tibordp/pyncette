@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import asyncio
 import contextlib
 import copy
@@ -5,13 +7,16 @@ import datetime
 import logging
 import signal
 import sys
+from itertools import chain
 from typing import Any
 from typing import AsyncContextManager
+from typing import AsyncIterator
 from typing import Callable
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import cast
 
 from .model import Context
 from .model import Decorator
@@ -21,6 +26,7 @@ from .model import FixtureFunc
 from .model import Lease
 from .model import ResultType
 from .model import TaskFunc
+from .model import TaskName
 from .repository import Repository
 from .repository import RepositoryFactory
 from .repository.in_memory import in_memory_repository
@@ -34,13 +40,119 @@ def current_time() -> datetime.datetime:
     return datetime.datetime.utcnow()
 
 
+class PyncetteContext:
+    """Execution context of a Pyncette app"""
+
+    _app: Pyncette
+    _repository: Repository
+    _root_context: Context
+    _scheduler: DefaultScheduler
+    _shutting_down: bool
+
+    def __init__(
+        self,
+        app: Pyncette,
+        repository: Repository,
+        scheduler: DefaultScheduler,
+        root_context: Context,
+    ):
+        self._repository = repository
+        self._scheduler = scheduler
+        self._root_context = root_context
+        self._app = app
+        self._shutting_down = False
+
+    async def schedule_task(
+        self, task: Task, instance_name: TaskName, **kwargs: Any
+    ) -> Task:
+        """Schedules a conrete instance of a dynamic task"""
+        task_name = cast(TaskName, f"{task.name}:{instance_name}")
+        concrete_task = task.instantiate(task_name, **kwargs)
+        utc_now = current_time()
+
+        await self._repository.register_task(utc_now, concrete_task)
+        return concrete_task
+
+    async def unschedule_task(self, task: Task, instance_name: TaskName) -> None:
+        """Removes the conrete instance of a dynamic task"""
+        task_name = cast(TaskName, f"{task.name}:{instance_name}")
+        concrete_task = task.instantiate(task_name, interval=datetime.timedelta())
+        utc_now = current_time()
+
+        await self._repository.unregister_task(utc_now, concrete_task)
+
+    async def _execute_task(self, task: Task, lease: Optional[Lease]) -> None:
+        try:
+            context = copy.copy(self._root_context)
+            context.__dict__.update(task.extra_args)
+
+            await task(context)
+            execution_suceeded = True
+        except Exception as e:
+            logger.warning(f"Task {task} failed", exc_info=e)
+            execution_suceeded = False
+
+        if task.execution_mode == ExecutionMode.BEST_EFFORT:
+            return
+
+        assert lease is not None
+        utc_now = current_time()
+        try:
+            if execution_suceeded or task.failure_mode == FailureMode.COMMIT:
+                await self._repository.commit_task(utc_now, task, lease)
+            elif task.failure_mode == FailureMode.UNLOCK:
+                await self._repository.unlock_task(utc_now, task, lease)
+        except Exception as e:
+            logger.warning(
+                "Failed to commit task {task}, it will likely execute again.",
+                exc_info=e,
+            )
+
+    async def _get_active_tasks(
+        self, utc_now: datetime.datetime
+    ) -> AsyncIterator[Task]:
+        for task in self._app._concrete_tasks:
+            yield task
+        for task in self._app._dynamic_tasks:
+            for concrete_task in await self._repository.query_task(utc_now, task):
+                yield concrete_task
+
+    async def _tick(self) -> None:
+        utc_now = current_time()
+
+        async for task in self._get_active_tasks(utc_now):
+            poll_result, lease = await self._repository.poll_task(utc_now, task)
+            if poll_result == ResultType.READY:
+                logger.info(f"Executing task {task} with {task.extra_args}")
+                self._scheduler.spawn_task(self._execute_task(task, lease))
+            elif poll_result == ResultType.PENDING:
+                logger.debug(
+                    f"Not executing task {task}, because it is not yet scheduled."
+                )
+            elif poll_result == ResultType.LOCKED:
+                logger.debug(f"Not executing task {task}, because it is locked.")
+
+    async def run(self) -> None:
+        """Runs the Pyncette's main event loop."""
+        while not self._shutting_down:
+            try:
+                await self._tick()
+            except Exception as e:
+                logger.warning("Polling tasks failed.", exc_info=e)
+
+            await asyncio.sleep(self._app._poll_interval.total_seconds())
+
+    def shutdown(self) -> None:
+        """Initiates graceful shutdown, allowing all executing tasks to finish."""
+        logger.info("Initiating graceful shutdown")
+        self._shutting_down = True
+
+
 class Pyncette:
     """Pyncette application."""
 
-    _discovered_tasks: List[Task]
-    _startup_tasks: List[Task]
-    _shutdown_tasks: List[Task]
-    _shutting_down: bool
+    _concrete_tasks: List[Task]
+    _dynamic_tasks: List[Task]
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _repository_factory: RepositoryFactory
     _poll_interval: datetime.timedelta
@@ -50,16 +162,16 @@ class Pyncette:
         self,
         repository_factory: RepositoryFactory = in_memory_repository,
         poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
-        **kwargs,
-    ):
-        self._discovered_tasks = []
+        **kwargs: Any,
+    ) -> None:
+        self._concrete_tasks = []
+        self._dynamic_tasks = []
         self._fixtures = []
-        self._shutting_down = False
         self._poll_interval = poll_interval
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
-    def task(self, **kwargs) -> Decorator[TaskFunc]:
+    def task(self, **kwargs: Any) -> Decorator[TaskFunc]:
         """Decorator for marking the coroutine as a task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
@@ -67,13 +179,36 @@ class Pyncette:
                 **kwargs,
                 "name": kwargs.get("name", None) or getattr(func, "__name__", None),
             }
-            if task_kwargs["name"] is not None:
-                self._discovered_tasks.append(Task(func=func, **task_kwargs))
-            else:
-                raise ValueError("Unable to determine name for the task")
-            return func
+            self._check_task_name(task_kwargs["name"])
+            task = Task(func=func, dynamic=False, **task_kwargs)
+            self._concrete_tasks.append(task)
+            return task
 
         return _func
+
+    def dynamic_task(self, **kwargs: Any) -> Decorator[TaskFunc]:
+        """Decorator for marking the coroutine as a dynamic task"""
+
+        def _func(func: TaskFunc) -> TaskFunc:
+            task_kwargs = {
+                **kwargs,
+                "name": kwargs.get("name", None) or getattr(func, "__name__", None),
+            }
+
+            self._check_task_name(task_kwargs["name"])
+            task = Task(func=func, dynamic=True, **task_kwargs)
+            self._dynamic_tasks.append(task)
+            return task
+
+        return _func
+
+    def _check_task_name(self, name: Optional[str]) -> None:
+        if name is None:
+            raise ValueError("Unable to determine name for the task")
+
+        for task in chain(self._concrete_tasks, self._dynamic_tasks):
+            if task.name == name:
+                raise ValueError(f"Duplicate task name {name}")
 
     def fixture(self, name: Optional[str] = None) -> Decorator[FixtureFunc]:
         """Decorator for marking the generator as a fixture"""
@@ -90,86 +225,20 @@ class Pyncette:
 
         return _func
 
-    async def _execute_task(
-        self,
-        repository: Repository,
-        task: Task,
-        lease: Optional[Lease],
-        root_context: Context,
-    ):
-        try:
-            context = copy.copy(root_context)
-            await task.task_func(context)
-            execution_suceeded = True
-        except Exception as e:
-            logger.warning(f"Task {task} failed", exc_info=e)
-            execution_suceeded = False
-
-        if task.execution_mode == ExecutionMode.BEST_EFFORT:
-            return
-
-        assert lease is not None
-        utc_now = current_time()
-        try:
-            if execution_suceeded or task.failure_mode == FailureMode.COMMIT:
-                await repository.commit_task(utc_now, task, lease)
-            elif task.failure_mode == FailureMode.UNLOCK:
-                await repository.unlock_task(utc_now, task, lease)
-        except Exception as e:
-            logger.warning(
-                "Failed to commit task {task}, it will likely execute again.",
-                exc_info=e,
-            )
-
-    async def _tick(
-        self, repository: Repository, scheduler: DefaultScheduler, root_context: Context
-    ):
-        utc_now = current_time()
-
-        for task in self._discovered_tasks:
-            poll_result, lease = await repository.poll_task(utc_now, task)
-            if poll_result == ResultType.READY:
-                logger.info(f"Executing task {task}")
-                scheduler.spawn_task(
-                    self._execute_task(repository, task, lease, root_context)
-                )
-            elif poll_result == ResultType.PENDING:
-                logger.debug(
-                    f"Not executing task {task}, because it is not yet scheduled."
-                )
-            elif poll_result == ResultType.LOCKED:
-                logger.debug(f"Not executing task {task}, because it is locked.")
-
-    async def run(self):
-        """Runs the Pyncette's main event loop."""
+    @contextlib.asynccontextmanager
+    async def create(self) -> AsyncIterator[PyncetteContext]:
+        """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration
         ) as repository, DefaultScheduler() as scheduler, contextlib.AsyncExitStack() as stack:
-            root_context = await self._create_context(stack)
+            root_context = await self._create_context(repository, stack)
 
-            while not self._shutting_down:
-                try:
-                    await self._tick(repository, scheduler, root_context)
-                except Exception as e:
-                    logger.warning("Polling tasks failed.", exc_info=e)
+            yield PyncetteContext(self, repository, scheduler, root_context)
 
-                await asyncio.sleep(self._poll_interval.total_seconds())
-
-    async def _create_context(self, stack: contextlib.AsyncExitStack) -> Context:
-        context = Context()
-        for name, callback in self._fixtures:
-            setattr(context, name, await stack.enter_async_context(callback()))
-        return context
-
-    def shutdown(self):
-        """Initiates a graceful shutdown"""
-        logger.info("Initiating graceful shutdown")
-        self._shutting_down = True
-
-    def _setup_signal_handler(self):
-        def handler(signum, frame):
-            if not self._shutting_down:
-                self.shutdown()
+    def _setup_signal_handler(self, context: PyncetteContext) -> None:
+        def handler(signum: Any, frame: Any) -> None:
+            if not context._shutting_down:
+                context.shutdown()
             else:
                 logger.warning("Terminating")
                 logging.shutdown()
@@ -177,10 +246,21 @@ class Pyncette:
 
         signal.signal(signal.SIGINT, handler)
 
-    def main(self):
-        """Convenience entrypoint for console apps, which sets up logging and signal handling."""
-        # Setup logging
-        self._setup_signal_handler()
+    async def _create_context(
+        self, repository: Repository, stack: contextlib.AsyncExitStack
+    ) -> Context:
+        context = Context()
 
+        for name, callback in self._fixtures:
+            setattr(context, name, await stack.enter_async_context(callback()))
+        return context
+
+    async def _run_main(self) -> None:
+        async with self.create() as context:
+            self._setup_signal_handler(context)
+            await context.run()
+
+    def main(self) -> None:
+        """Convenience entrypoint for console apps, which sets up logging and signal handling."""
         loop = asyncio.get_event_loop()
-        loop.run_until_complete(self.run())
+        loop.run_until_complete(self._run_main())
