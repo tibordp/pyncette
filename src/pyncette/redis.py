@@ -13,17 +13,17 @@ from typing import cast
 
 import aioredis
 
-from pyncette.errors import PyncetteException
-from pyncette.model import ExecutionMode
-from pyncette.model import Lease
-from pyncette.model import ResultType
-from pyncette.repository import Repository
-from pyncette.task import Task
+from .errors import PyncetteException
+from .model import ExecutionMode
+from .model import Lease
+from .model import ResultType
+from .repository import Repository
+from .task import Task
 
 logger = logging.getLogger(__name__)
 
 
-class LuaScript:
+class _LuaScript:
     """A wrapper for Redis lua scripts that automaticaly reloads it if e.g. SCRIPT FLUSH is invoked"""
 
     _script: str
@@ -69,11 +69,11 @@ class RedisRepository(Repository):
 
     _redis_client: aioredis.Redis
     _namespace: str
-    _poll_script: LuaScript
-    _commit_script: LuaScript
-    _query_script: LuaScript
+    _poll_script: _LuaScript
+    _commit_script: _LuaScript
+    _query_script: _LuaScript
 
-    QUERY_LUA = """
+    _QUERY_LUA = """
     local utc_now, limit = unpack(ARGV)
     local tasksets = redis.call('zrangebylex', KEYS[1], '-', '(' .. utc_now .. '`', 'LIMIT', 0, limit)
     local result = {}
@@ -86,7 +86,7 @@ class RedisRepository(Repository):
     return result
     """
 
-    UNREGISTER_LUA = """
+    _UNREGISTER_LUA = """
     local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
     local taskset_suffix = '_' .. KEYS[1]
 
@@ -102,7 +102,7 @@ class RedisRepository(Repository):
     return { result, version, execute_after, locked_until, task_spec }
     """
 
-    POLL_LUA = """
+    _POLL_LUA = """
     local mode, utc_now, incoming_version, incoming_execute_after, incoming_locked_until = unpack(ARGV)
     local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
     local taskset_suffix = '_' .. KEYS[1]
@@ -136,7 +136,7 @@ class RedisRepository(Repository):
     return { result, version, execute_after, locked_until, task_spec }
     """
 
-    COMMIT_LUA = """
+    _COMMIT_LUA = """
     local incoming_version, incoming_execute_after = unpack(ARGV)
     local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
     local taskset_suffix = '_' .. KEYS[1]
@@ -165,10 +165,10 @@ class RedisRepository(Repository):
         self._redis_client = redis_client
         self._namespace = kwargs.get("redis_namespace", "")
         self._batch_size = kwargs.get("redis_batch_size", 100)
-        self._poll_script = LuaScript(self.POLL_LUA)
-        self._commit_script = LuaScript(self.COMMIT_LUA)
-        self._query_script = LuaScript(self.QUERY_LUA)
-        self._unregister_script = LuaScript(self.UNREGISTER_LUA)
+        self._poll_script = _LuaScript(self._POLL_LUA)
+        self._commit_script = _LuaScript(self._COMMIT_LUA)
+        self._query_script = _LuaScript(self._QUERY_LUA)
+        self._unregister_script = _LuaScript(self._UNREGISTER_LUA)
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> List[Task]:
         response = await self._query_script.execute(

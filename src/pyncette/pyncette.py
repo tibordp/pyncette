@@ -29,14 +29,14 @@ from .model import TaskFunc
 from .model import TaskName
 from .repository import Repository
 from .repository import RepositoryFactory
-from .repository.in_memory import in_memory_repository
+from .repository import in_memory_repository
 from .scheduler import DefaultScheduler
 from .task import Task
 
 logger = logging.getLogger(__name__)
 
 
-def current_time() -> datetime.datetime:
+def _current_time() -> datetime.datetime:
     return datetime.datetime.utcnow()
 
 
@@ -68,7 +68,7 @@ class PyncetteContext:
         """Schedules a conrete instance of a dynamic task"""
         task_name = cast(TaskName, f"{task.name}:{instance_name}")
         concrete_task = task.instantiate(task_name, **kwargs)
-        utc_now = current_time()
+        utc_now = _current_time()
 
         await self._repository.register_task(utc_now, concrete_task)
         return concrete_task
@@ -77,7 +77,7 @@ class PyncetteContext:
         """Removes the conrete instance of a dynamic task"""
         task_name = cast(TaskName, f"{task.name}:{instance_name}")
         concrete_task = task.instantiate(task_name, interval=datetime.timedelta())
-        utc_now = current_time()
+        utc_now = _current_time()
 
         await self._repository.unregister_task(utc_now, concrete_task)
 
@@ -96,7 +96,7 @@ class PyncetteContext:
             return
 
         assert lease is not None
-        utc_now = current_time()
+        utc_now = _current_time()
         try:
             if execution_suceeded or task.failure_mode == FailureMode.COMMIT:
                 await self._repository.commit_task(utc_now, task, lease)
@@ -118,7 +118,7 @@ class PyncetteContext:
                 yield concrete_task
 
     async def _tick(self) -> None:
-        utc_now = current_time()
+        utc_now = _current_time()
 
         async for task in self._get_active_tasks(utc_now):
             poll_result, lease = await self._repository.poll_task(utc_now, task)

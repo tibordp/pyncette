@@ -92,7 +92,7 @@ Persistent distributed cron using Redis (coordinates execution with parallel ins
 .. code:: python
 
     from pyncette import Pyncette, Context
-    from pyncette.repository.redis import redis_repository
+    from pyncette.redis import redis_repository
 
     app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost')
 

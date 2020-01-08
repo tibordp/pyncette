@@ -16,7 +16,7 @@ from pyncette import Pyncette
 @pytest.fixture
 def timemachine(monkeypatch):
     timemachine = TimeMachine(datetime.datetime(2019, 1, 1, 0, 0, 0))
-    monkeypatch.setattr(pyncette.pyncette, "current_time", timemachine.utcnow)
+    monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
     monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
     return timemachine
 

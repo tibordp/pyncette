@@ -8,7 +8,7 @@ Contents
    readme
    installation
    usage
-   reference/index
+   reference/pyncette
    contributing
    authors
    changelog
