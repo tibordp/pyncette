@@ -1,10 +1,14 @@
+from __future__ import annotations
+
 import datetime
 from dataclasses import dataclass
 from enum import Enum
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import List
 from typing import NewType
 from typing import Optional
 from typing import TypeVar
@@ -16,9 +20,13 @@ Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
 TaskName = NewType("TaskName", str)
 
+if TYPE_CHECKING:
+    from .task import Task
+
 
 class Context:
     """Task execution context. This class can have dynamic attributes."""
+
     scheduled_at: datetime.datetime
 
 
@@ -62,3 +70,9 @@ class PollResponse:
     result: ResultType
     scheduled_at: datetime.datetime
     lease: Optional[Lease]
+
+
+@dataclass
+class QueryResponse:
+    tasks: List[Task]
+    has_more: bool

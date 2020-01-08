@@ -127,8 +127,15 @@ class PyncetteContext:
         for task in self._app._concrete_tasks:
             yield task
         for task in self._app._dynamic_tasks:
-            for concrete_task in await self._repository.query_task(utc_now, task):
-                yield concrete_task
+            while not self._shutting_down:
+                query_response = await self._repository.query_task(utc_now, task)
+                for concrete_task in query_response.tasks:
+                    yield concrete_task
+
+                if not query_response.has_more:
+                    break
+
+                logger.debug(f"Dynamic {task} has more due instances, looping.")
 
     async def _tick(self) -> None:
         utc_now = _current_time()

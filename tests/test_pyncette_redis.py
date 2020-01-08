@@ -164,34 +164,3 @@ async def test_dynamic_cron_timezones(monkeypatch):
     counter.bill.assert_called_with(datetime.timedelta(hours=1))
     counter.steve.assert_called_with(datetime.timedelta(hours=-2))
     counter.tibor.assert_called_with(datetime.timedelta())
-
-@pytest.mark.asyncio
-@pytest.mark.integration
-async def test_benchmark(monkeypatch):
-    app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
-    )
-
-    counter = MagicMock()
-
-    @app.dynamic_task()
-    async def hello(context: Context) -> None:
-        pass
-
-    async with app.create() as ctx:
-        tasks = []
-        for hour in range(24):
-            for minute in range(60):
-                for second in range(60):
-                    tasks.append(ctx.schedule_task(hello, str(uuid4()), schedule=f"{minute} {hour} * * * {second}"))
-
-        await asyncio.gather(*tasks)
-
-        task = asyncio.create_task(ctx.run())
-        await asyncio.sleep(60)
-        ctx.shutdown()
-        await task
-
-    assert counter.call_count > 3600

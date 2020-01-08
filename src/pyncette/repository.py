@@ -8,7 +8,6 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import DefaultDict
 from typing import Dict
-from typing import List
 from typing import Optional
 
 from typing_extensions import Protocol
@@ -16,6 +15,7 @@ from typing_extensions import Protocol
 from .model import ExecutionMode
 from .model import Lease
 from .model import PollResponse
+from .model import QueryResponse
 from .model import ResultType
 from .model import TaskName
 from .task import Task
@@ -27,7 +27,7 @@ class Repository(abc.ABC):
     """Abstract base class representing a store for Pyncette tasks"""
 
     @abc.abstractmethod
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> List[Task]:
+    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
         pass
 
@@ -78,8 +78,10 @@ class InMemoryRepository(Repository):
         self._data = {}
         self._dynamic_tasks = defaultdict(dict)
 
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> List[Task]:
-        return list(self._dynamic_tasks[task.name].values())
+    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+        return QueryResponse(
+            tasks=list(self._dynamic_tasks[task.name].values()), has_more=False
+        )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         assert task.parent_task is not None

@@ -1,19 +1,21 @@
-from pyncette import Pyncette, Context
-from pyncette.redis import redis_repository
-from uuid import uuid4
-from multiprocessing import Pool
-
-import asyncio
 import argparse
-import logging
+import asyncio
 import datetime
+import logging
+from multiprocessing import Pool
+from uuid import uuid4
+
+from pyncette import Context
+from pyncette import Pyncette
+from pyncette.redis import redis_repository
 
 app = Pyncette(
     redis_url="redis://localhost",
     redis_namespace="benchmark",
     repository_factory=redis_repository,
-    redis_batch_size=50
+    redis_batch_size=50,
 )
+
 
 @app.dynamic_task()
 async def hello(context: Context) -> None:
@@ -26,16 +28,26 @@ async def setup(hour):
     async with app.create() as ctx:
         for minute in range(60):
             for second in range(60):
-                await asyncio.gather(*[ctx.schedule_task(hello, str(uuid4()), schedule=f"{minute} {hour} * * * {second}") for _ in range(num_per_second)])
+                await asyncio.gather(
+                    *[
+                        ctx.schedule_task(
+                            hello,
+                            str(uuid4()),
+                            schedule=f"{minute} {hour} * * * {second}",
+                        )
+                        for _ in range(num_per_second)
+                    ]
+                )
             print(f"Inserting {hour}:{minute} done")
-        
+
 
 def f(hour):
     asyncio.run(setup(hour))
 
-parser = argparse.ArgumentParser(description='Pyncette benchmark')
-parser.add_argument('--setup', help='Prepare the tasks', action='store_true')
-parser.add_argument('--run', help='Run the tasks', action='store_true')
+
+parser = argparse.ArgumentParser(description="Pyncette benchmark")
+parser.add_argument("--setup", help="Prepare the tasks", action="store_true")
+parser.add_argument("--run", help="Run the tasks", action="store_true")
 args = parser.parse_args()
 
 if args.setup:
