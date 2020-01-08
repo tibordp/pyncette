@@ -47,7 +47,7 @@ class Task:
         timezone: Optional[str] = None,
         fast_forward: bool = False,
         failure_mode: FailureMode = FailureMode.NONE,
-        execution_mode: ExecutionMode = ExecutionMode.RELIABLE,
+        execution_mode: ExecutionMode = ExecutionMode.AT_LEAST_ONCE,
         lease_duration: datetime.timedelta = datetime.timedelta(seconds=60),
         **kwargs: Any,
     ):
@@ -70,11 +70,11 @@ class Task:
 
     def _validate(self) -> None:
         if (
-            self.execution_mode == ExecutionMode.BEST_EFFORT
+            self.execution_mode == ExecutionMode.AT_MOST_ONCE
             and self.failure_mode != FailureMode.NONE
         ):
             raise ValueError(
-                "failure_mode is not applicable when execution_mode is BEST_EFFORT"
+                "failure_mode is not applicable when execution_mode is AT_MOST_ONCE"
             )
 
         if not self.dynamic:

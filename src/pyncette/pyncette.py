@@ -105,7 +105,7 @@ class PyncetteContext:
             logger.warning(f"Task {task} failed", exc_info=e)
             execution_suceeded = False
 
-        if task.execution_mode == ExecutionMode.BEST_EFFORT:
+        if task.execution_mode == ExecutionMode.AT_MOST_ONCE:
             return
 
         assert poll_response.lease is not None

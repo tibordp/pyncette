@@ -20,9 +20,6 @@ Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
 TaskName = NewType("TaskName", str)
 
-if TYPE_CHECKING:
-    from .task import Task
-
 
 class Context:
     """Task execution context. This class can have dynamic attributes."""
@@ -53,8 +50,8 @@ class ResultType(Enum):
 class ExecutionMode(Enum):
     """The execution mode for a Pyncette task."""
 
-    RELIABLE = 0
-    BEST_EFFORT = 1
+    AT_LEAST_ONCE = 0
+    AT_MOST_ONCE = 1
 
 
 class FailureMode(Enum):
@@ -65,8 +62,14 @@ class FailureMode(Enum):
     COMMIT = 2
 
 
+if TYPE_CHECKING:
+    import pyncette.task
+
+
 @dataclass
 class PollResponse:
+    """The result of a task poll"""
+
     result: ResultType
     scheduled_at: datetime.datetime
     lease: Optional[Lease]
@@ -74,5 +77,7 @@ class PollResponse:
 
 @dataclass
 class QueryResponse:
-    tasks: List[Task]
+    """The result of a task query"""
+
+    tasks: List[pyncette.task.Task]
     has_more: bool

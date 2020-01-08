@@ -61,11 +61,11 @@ def test_invalid_configuration():
 
     with pytest.raises(
         ValueError,
-        match="failure_mode is not applicable when execution_mode is BEST_EFFORT",
+        match="failure_mode is not applicable when execution_mode is AT_MOST_ONCE",
     ):
 
         @app.task(
-            execution_mode=ExecutionMode.BEST_EFFORT, failure_mode=FailureMode.UNLOCK
+            execution_mode=ExecutionMode.AT_MOST_ONCE, failure_mode=FailureMode.UNLOCK
         )
         def _dummy6(context: Context):
             pass
@@ -200,7 +200,8 @@ async def test_failed_task_not_retried_if_best_effort(timemachine):
     counter = MagicMock()
 
     @app.task(
-        interval=datetime.timedelta(seconds=2), execution_mode=ExecutionMode.BEST_EFFORT
+        interval=datetime.timedelta(seconds=2),
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
     )
     async def failing_task(context: Context) -> None:
         counter.execute()
@@ -268,7 +269,8 @@ async def test_not_locked_while_executing_if_best_effort_is_used(timemachine):
     counter = MagicMock()
 
     @app.task(
-        interval=datetime.timedelta(seconds=2), execution_mode=ExecutionMode.BEST_EFFORT
+        interval=datetime.timedelta(seconds=2),
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
     )
     async def successful_task(context: Context) -> None:
         counter.execute()
@@ -489,7 +491,8 @@ async def test_concurrency_limit(timemachine,):
     counter = MagicMock()
 
     @app.task(
-        interval=datetime.timedelta(seconds=1), execution_mode=ExecutionMode.BEST_EFFORT
+        interval=datetime.timedelta(seconds=1),
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
     )
     async def long_running_task(context: Context) -> None:
         counter.execute()

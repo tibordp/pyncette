@@ -155,14 +155,14 @@ class RedisRepository(Repository):
         result = "LOCKED"
     elseif execute_after < utc_now and version ~= incoming_version then
         result = "LEASE_MISMATCH"
-    elseif execute_after < utc_now and mode == 'BEST_EFFORT' then
+    elseif execute_after < utc_now and mode == 'AT_MOST_ONCE' then
         redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
         version, execute_after, locked_until = version + 1, incoming_execute_after, nil
         redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after)
         redis.call('hdel', KEYS[1], 'locked_until')
         redis.call('zadd', KEYS[2], 0, getTasksetKey(KEYS[1], locked_until, execute_after))
         result = "READY"
-    elseif execute_after < utc_now and mode == 'RELIABLE' then
+    elseif execute_after < utc_now and mode == 'AT_LEAST_ONCE' then
         redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
         version, locked_until = version + 1, incoming_locked_until
         redis.call('hmset', KEYS[1], 'version', version, 'locked_until', incoming_locked_until)
@@ -220,7 +220,7 @@ class RedisRepository(Repository):
         self._unregister_script = _LuaScript(self._UNREGISTER_LUA)
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
-        new_locked_until = utc_now + datetime.timedelta(seconds=10)
+        new_locked_until = utc_now + task.lease_duration
         response = await self._query_script.execute(
             self._redis_client,
             keys=[
@@ -306,7 +306,7 @@ class RedisRepository(Repository):
             # By default we assume that the task is brand new
             version, execute_after = 0, None
 
-        new_locked_until = utc_now + datetime.timedelta(seconds=10)
+        new_locked_until = utc_now + task.lease_duration
         for _ in range(5):
             next_execution = task.get_next_execution(utc_now, execute_after)
             response = await self._poll_record(

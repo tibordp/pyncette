@@ -110,12 +110,16 @@ class InMemoryRepository(Repository):
         if locked_until is not None and locked_until > utc_now:
             result = ResultType.LOCKED
         elif (
-            scheduled_at <= utc_now and task.execution_mode == ExecutionMode.BEST_EFFORT
+            scheduled_at <= utc_now
+            and task.execution_mode == ExecutionMode.AT_MOST_ONCE
         ):
             task_data["locked_until"] = None
             task_data["execute_after"] = task.get_next_execution(utc_now, scheduled_at)
             result = ResultType.READY
-        elif scheduled_at <= utc_now and task.execution_mode == ExecutionMode.RELIABLE:
+        elif (
+            scheduled_at <= utc_now
+            and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
+        ):
             lease = Lease(object())
             task_data["locked_until"] = utc_now + task.lease_duration
             task_data["locked_by"] = lease

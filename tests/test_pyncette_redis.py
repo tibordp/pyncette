@@ -115,7 +115,7 @@ async def test_failing_task_interval_best_effort(monkeypatch):
 
     @app.task(
         interval=datetime.timedelta(seconds=5),
-        execution_mode=ExecutionMode.BEST_EFFORT,
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
     )
     async def failing_task(context: Context) -> None:
         counter()
@@ -169,38 +169,31 @@ async def test_dynamic_cron_timezones(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_dynamic_batch_size(monkeypatch):
+    """We are able to process all thre instances of the dynamic task in one tick, even though batch size is set to one"""
+
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),
         repository_factory=redis_repository,
-        redis_batch_size=10,
+        redis_batch_size=1,
     )
 
     counter = MagicMock()
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        getattr(counter, context.username)()
+        counter.execute()
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
         await asyncio.gather(
-            ctx.schedule_task(
-                hello, "1", interval=datetime.timedelta(seconds=1), username="bill"
-            ),
-            ctx.schedule_task(
-                hello, "2", interval=datetime.timedelta(seconds=1), username="steve"
-            ),
-            ctx.schedule_task(
-                hello, "3", interval=datetime.timedelta(seconds=1), username="tibor"
-            ),
+            *[
+                ctx.schedule_task(hello, int(i), interval=datetime.timedelta(seconds=1))
+                for i in range(10)
+            ],
         )
-        await asyncio.sleep(2.5)
-        await ctx.unschedule_task(hello, "1")
-        await asyncio.sleep(8)
+        await asyncio.sleep(3)
         ctx.shutdown()
         await task
 
-    assert counter.bill.call_count == 1
-    assert counter.steve.call_count == 3
-    assert counter.tibor.call_count == 2
+    assert counter.execute.call_count == 20
