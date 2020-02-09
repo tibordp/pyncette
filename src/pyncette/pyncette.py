@@ -275,7 +275,7 @@ class Pyncette:
 
     def _setup_signal_handler(self, context: PyncetteContext) -> None:
         def handler(signum: Any, frame: Any) -> None:
-            if not context._shutting_down:
+            if not context._shutting_down.is_set():
                 context.shutdown()
             else:
                 logger.warning("Terminating")
