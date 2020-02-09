@@ -24,7 +24,7 @@ def read(*names, **kwargs):
 
 setup(
     name="pyncette",
-    version="0.2.1",
+    version="0.2.2",
     license="MIT",
     description="A reliable distributed cron with pluggable storage backends",
     long_description="%s\n%s"
