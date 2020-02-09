@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import time
 from unittest.mock import MagicMock
 
 import dateutil.tz
@@ -18,6 +19,8 @@ def timemachine(monkeypatch):
     )
     monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
     monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
+    monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
+    monkeypatch.setattr(time, "perf_counter", timemachine.perf_counter)
     return timemachine
 
 
@@ -46,8 +49,8 @@ async def test_successful_task_interval_dynamic(timemachine):
         )
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 12
 
@@ -83,8 +86,8 @@ async def test_successful_task_interval_dynamic_extra_args(timemachine):
         )
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     counter.execute.assert_any_call("bill")
     counter.execute.assert_any_call("steve")

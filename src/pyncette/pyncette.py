@@ -51,7 +51,7 @@ class PyncetteContext:
     _repository: Repository
     _root_context: Context
     _scheduler: DefaultScheduler
-    _shutting_down: bool
+    _shutting_down: asyncio.Event
 
     def __init__(
         self,
@@ -64,7 +64,7 @@ class PyncetteContext:
         self._scheduler = scheduler
         self._root_context = root_context
         self._app = app
-        self._shutting_down = False
+        self._shutting_down = asyncio.Event()
 
     async def schedule_task(
         self, task: Task, instance_name: TaskName, **kwargs: Any
@@ -127,7 +127,7 @@ class PyncetteContext:
         for task in self._app._concrete_tasks:
             yield task
         for task in self._app._dynamic_tasks:
-            while not self._shutting_down:
+            while not self._shutting_down.is_set():
                 query_response = await self._repository.query_task(utc_now, task)
                 for concrete_task in query_response.tasks:
                     yield concrete_task
@@ -141,6 +141,9 @@ class PyncetteContext:
         utc_now = _current_time()
 
         async for task in self._get_active_tasks(utc_now):
+            if self._shutting_down.is_set():
+                break
+
             poll_response = await self._repository.poll_task(utc_now, task)
             if poll_response.result == ResultType.READY:
                 logger.info(f"Executing task {task} with {task.extra_args}")
@@ -156,18 +159,26 @@ class PyncetteContext:
 
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
-        while not self._shutting_down:
+        while not self._shutting_down.is_set():
             try:
                 await self._tick()
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.warning("Polling tasks failed.", exc_info=e)
 
-            await asyncio.sleep(self._app._poll_interval.total_seconds())
+            try:
+                await asyncio.wait_for(
+                    self._shutting_down.wait(),
+                    timeout=self._app._poll_interval.total_seconds(),
+                )
+            except asyncio.TimeoutError:
+                pass
 
     def shutdown(self) -> None:
-        """Initiates graceful shutdown, allowing all executing tasks to finish."""
+        """Initiates graceful shutdown, terminating the main loop, but allowing all executing tasks to finish."""
         logger.info("Initiating graceful shutdown")
-        self._shutting_down = True
+        self._shutting_down.set()
 
 
 class Pyncette:

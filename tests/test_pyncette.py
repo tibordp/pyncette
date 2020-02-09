@@ -1,5 +1,6 @@
 import asyncio
 import datetime
+import time
 from unittest.mock import MagicMock
 
 import dateutil.tz
@@ -21,6 +22,8 @@ def timemachine(monkeypatch):
     )
     monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
     monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
+    monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
+    monkeypatch.setattr(time, "perf_counter", timemachine.perf_counter)
     return timemachine
 
 
@@ -90,7 +93,6 @@ def test_invalid_configuration():
 @pytest.mark.asyncio
 async def test_successful_task_interval(timemachine):
     app = Pyncette()
-
     counter = MagicMock()
 
     @app.task(interval=datetime.timedelta(seconds=2))
@@ -101,8 +103,8 @@ async def test_successful_task_interval(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 5
 
@@ -121,8 +123,8 @@ async def test_successful_task_cronspec(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(minutes=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=60))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 10
 
@@ -142,8 +144,8 @@ async def test_failed_task_retried_on_every_tick_if_unlock(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 9
 
@@ -166,8 +168,8 @@ async def test_failed_task_retried_after_lease_over_if_failure_mode_none(timemac
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=20))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 4
 
@@ -187,8 +189,8 @@ async def test_failed_task_not_retried_if_commit_on_failure(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 5
 
@@ -211,8 +213,8 @@ async def test_failed_task_not_retried_if_best_effort(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 5
 
@@ -232,8 +234,8 @@ async def test_locked_while_executing(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 2
 
@@ -256,8 +258,8 @@ async def test_lease_is_taken_over_if_expired(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 5
 
@@ -280,8 +282,8 @@ async def test_not_locked_while_executing_if_best_effort_is_used(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 5
 
@@ -303,8 +305,8 @@ async def test_catches_up_with_stale_executions(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=20))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 10
 
@@ -323,8 +325,8 @@ async def test_context_scheduled_at(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.offset.call_count == 5
     counter.offset.assert_any_call(
@@ -367,8 +369,8 @@ async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=20))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 7
 
@@ -393,8 +395,8 @@ async def test_fixture(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.entered.call_count == 1
     assert counter.executed.call_count == 5
@@ -416,8 +418,8 @@ async def test_extra_args(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.foo == "bar"
     assert counter.quux == 123
@@ -438,8 +440,8 @@ async def test_multi_task(timemachine):
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
         await task
+        await timemachine.close()
 
     assert counter.execute.call_count == 15
 
@@ -480,8 +482,8 @@ async def test_timezone_support(timemachine):
         assert counter.execute_plus_6.call_count == 1
 
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(minutes=10))
         await task
+        await timemachine.close()
 
 
 @pytest.mark.asyncio
@@ -489,6 +491,7 @@ async def test_concurrency_limit(timemachine,):
     app = Pyncette(concurrency_limit=1)
 
     counter = MagicMock()
+    release = asyncio.Event()
 
     @app.task(
         interval=datetime.timedelta(seconds=1),
@@ -496,14 +499,40 @@ async def test_concurrency_limit(timemachine,):
     )
     async def long_running_task(context: Context) -> None:
         counter.execute()
-        await asyncio.sleep(5)
+        await release.wait()
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
-        assert counter.execute.call_count == 2
+        assert counter.execute.call_count == 1
         ctx.shutdown()
-        await timemachine.step(datetime.timedelta(seconds=10))
+        release.set()
         await task
+        await timemachine.close()
 
-    assert counter.execute.call_count == 3  # One extra call after
+    assert counter.execute.call_count == 2  # One extra call after
+
+
+@pytest.mark.asyncio
+async def test_cancelling_run_should_cancel_executing_tasks(timemachine,):
+    app = Pyncette(concurrency_limit=1)
+
+    counter = MagicMock()
+    release = asyncio.Event()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=1),
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
+    )
+    async def long_running_task(context: Context) -> None:
+        counter.execute()
+        await release.wait()
+
+    with pytest.raises(asyncio.CancelledError):
+        async with app.create() as ctx:
+            task = asyncio.create_task(ctx.run())
+            await timemachine.step(datetime.timedelta(seconds=1.5))
+            task.cancel()
+            await task
+
+    assert counter.execute.call_count == 1

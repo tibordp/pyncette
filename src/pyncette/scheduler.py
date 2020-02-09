@@ -2,17 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from typing import Any
 from typing import Awaitable
 from typing import Dict
 from typing import Optional
 from typing import Type
 
+logger = logging.getLogger(__name__)
+
 
 class DefaultScheduler(contextlib.AbstractAsyncContextManager):
     """Manages the spawned tasks running in background"""
 
-    _tasks: Dict[object, Awaitable]
+    _tasks: Dict[object, asyncio.Task]
     _semaphore: asyncio.Semaphore
 
     def __init__(self, concurrency_limit: int) -> None:
@@ -28,7 +31,15 @@ class DefaultScheduler(contextlib.AbstractAsyncContextManager):
         exc_value: Optional[BaseException],
         traceback: Optional[Any],
     ) -> None:
-        await asyncio.gather(*self._tasks.values())
+        if self._tasks:
+            logging.debug(f"{exc_type}, {exc_value}, {traceback}")
+            if exc_type == asyncio.CancelledError:
+                logger.warning("Cancelling remaining tasks.")
+                for task in self._tasks.values():
+                    task.cancel()
+
+            logger.info("Waiting for remaining tasks to finish.")
+            await asyncio.wait(self._tasks.values())
 
     async def spawn_task(self, task: Awaitable) -> None:
         identity = object()
