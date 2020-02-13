@@ -140,10 +140,50 @@ This allows for parametrized tasks with multiple decorators, this is an essentia
 
 .. note:: There is a restriction that all the values of the parameters must be JSON-serializable, since they are persisted in storage when dynamic tasks are used.
 
+Middlewares
+-----------
+
+If you have common logic that should execute around every task invocation, middlewares can be used. Good examples of middlewares are ones used for logging and metrics.
+
+    app = Pyncette()
+    
+    @app.middleware
+    async def retry(context: Context, next: Callable[[], Awaitable[None]]):
+        # Prefer to rely on Pyncette to drive task retry logic
+        for _ in range(5):
+            try:
+                await next()
+                return
+            except Exception as e:
+                pass
+        raise Exception(f"Task {context.task.name} failed too many times.")
+
+    @app.middleware
+    async def logging(context: Context, next: Callable[[], Awaitable[None]]):
+        logger.info(f"Task {context.task.name} started")
+        try:
+            await next()
+        except Exception as e:
+            logger.error(f"Task {context.task.name} failed", e)
+            raise        
+
+    @app.middleware
+    async def db_transaction(context: Context, next: Callable[[], Awaitable[None]]):
+        context.db.begin_transaction()
+        try:
+            await next()
+        except Exception:
+            context.db.rollback()
+            raise            
+        else:
+            context.db.commit()
+
+Middlewares execute in order they are defined.
+
 Fixtures
 --------
 
-Fixtures provide a convenient way for injecting dependencies into tasks, and specifying the set-up and tear-down code. For example, let's say we want to inject the database and a logfile as dependencies to all our tasks::
+Fixtures provide a convenient way for injecting dependencies into tasks, and specifying the set-up and tear-down code. They can be though of as application-level middlewares. For example, let's say we want to inject the database and a logfile as dependencies to all our tasks::
 
     app = Pyncette()
 
@@ -166,7 +206,7 @@ Fixtures provide a convenient way for injecting dependencies into tasks, and spe
         results = await context.db.query(...)
         ...
 
-The lifetime of a fixture is that of a Pyncette application, i.e. the setup code for all fixtures runs before the first tick and the tear-down code runs after the graceful shutdown is initiated and all the pending tasks have finished.
+The lifetime of a fixture is that of a Pyncette application, i.e. the setup code for all fixtures runs before the first tick and the tear-down code runs after the graceful shutdown is initiated and all the pending tasks have finished. Like middlewares, fixtures execute in the order they are defined (and in reverse order on shutdown).
 
 
 Persistence

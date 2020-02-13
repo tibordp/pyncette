@@ -1,3 +1,5 @@
+# flake8: noqa
+
 import asyncio
 import datetime
 from unittest.mock import MagicMock

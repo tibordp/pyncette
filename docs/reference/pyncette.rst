@@ -13,6 +13,7 @@ Submodules
    pyncette.repository
    pyncette.scheduler
    pyncette.task
+   pyncette.prometheus
 
 Module contents
 ---------------

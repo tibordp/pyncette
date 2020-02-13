@@ -7,10 +7,12 @@ import datetime
 import logging
 import signal
 import sys
+from functools import partial
 from itertools import chain
 from typing import Any
 from typing import AsyncContextManager
 from typing import AsyncIterator
+from typing import Awaitable
 from typing import Callable
 from typing import Dict
 from typing import List
@@ -25,6 +27,7 @@ from .model import Decorator
 from .model import ExecutionMode
 from .model import FailureMode
 from .model import FixtureFunc
+from .model import MiddlewareFunc
 from .model import PollResponse
 from .model import ResultType
 from .model import TaskFunc
@@ -87,6 +90,7 @@ class PyncetteContext:
 
     def _populate_context(self, task: Task, poll_response: PollResponse) -> Context:
         context = copy.copy(self._root_context)
+        context.task = task
         context.__dict__.update(**task.extra_args)
         tz = (
             dateutil.tz.UTC
@@ -99,11 +103,15 @@ class PyncetteContext:
     async def _execute_task(self, task: Task, poll_response: PollResponse) -> None:
         try:
             context = self._populate_context(task, poll_response)
-            await task(context)
-            execution_suceeded = True
+            task_func: Callable[[], Awaitable[None]] = partial(task, context)
+            for middleware in reversed(self._app._middlewares):
+                task_func = partial(middleware, context, task_func)
+            await task_func()
         except Exception as e:
             logger.warning(f"Task {task} failed", exc_info=e)
             execution_suceeded = False
+        else:
+            execution_suceeded = True
 
         if task.execution_mode == ExecutionMode.AT_MOST_ONCE:
             return
@@ -187,6 +195,7 @@ class Pyncette:
     _concrete_tasks: List[Task]
     _dynamic_tasks: List[Task]
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
+    _middlewares: List[MiddlewareFunc]
     _repository_factory: RepositoryFactory
     _poll_interval: datetime.timedelta
     _concurrency_limit: int
@@ -202,6 +211,7 @@ class Pyncette:
         self._concrete_tasks = []
         self._dynamic_tasks = []
         self._fixtures = []
+        self._middlewares = []
         self._poll_interval = poll_interval
         self._concurrency_limit = concurrency_limit
         self._repository_factory = repository_factory
@@ -260,6 +270,11 @@ class Pyncette:
             return func
 
         return _func
+
+    def middleware(self, func: MiddlewareFunc) -> MiddlewareFunc:
+        """Decorator for marking the function as a middleware"""
+        self._middlewares.append(func)
+        return func
 
     @contextlib.asynccontextmanager
     async def create(self) -> AsyncIterator[PyncetteContext]:
