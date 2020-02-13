@@ -3,6 +3,7 @@ graft src
 graft ci
 graft tests
 graft benchmark
+graft examples
 
 include .readthedocs.yml
 include .bumpversion.cfg

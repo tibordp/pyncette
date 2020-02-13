@@ -1,30 +1,22 @@
+# flake8: noqa
+
 import asyncio
 import datetime
 import time
+from typing import Awaitable
+from typing import Callable
 from unittest.mock import MagicMock
+from unittest.mock import call
 
 import dateutil.tz
 import pytest
 from croniter.croniter import CroniterBadCronError
-from timemachine import TimeMachine
+from timemachine import timemachine
 
-import pyncette
 from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
-
-
-@pytest.fixture
-def timemachine(monkeypatch):
-    timemachine = TimeMachine(
-        datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC)
-    )
-    monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
-    monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
-    monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
-    monkeypatch.setattr(time, "perf_counter", timemachine.perf_counter)
-    return timemachine
 
 
 def test_invalid_configuration():
@@ -536,3 +528,57 @@ async def test_cancelling_run_should_cancel_executing_tasks(timemachine,):
             await task
 
     assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_middlewares(timemachine):
+    app = Pyncette()
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def task1(context: Context) -> None:
+        pass
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def task2(context: Context) -> None:
+        raise Exception()
+
+    @app.middleware
+    async def switch1(context: Context, next: Callable[[], Awaitable[None]]):
+        c = getattr(counter, context.task.name)
+        try:
+            c.enter(1)
+            await next()
+            c.success(1)
+        except:  # noqa: E722
+            c.caught(1)
+
+    @app.middleware
+    async def switch2(context: Context, next: Callable[[], Awaitable[None]]):
+        c = getattr(counter, context.task.name)
+        try:
+            c.enter(2)
+            await next()
+            c.success(2)
+        except:  # noqa: E722
+            c.caught(2)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=2))
+        ctx.shutdown()
+        await task
+        await timemachine.close()
+
+    assert counter.task1.mock_calls == [
+        call.enter(1),
+        call.enter(2),
+        call.success(2),
+        call.success(1),
+    ]
+    assert counter.task2.mock_calls == [
+        call.enter(1),
+        call.enter(2),
+        call.caught(2),
+        call.success(1),
+    ]

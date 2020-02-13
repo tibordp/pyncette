@@ -24,11 +24,19 @@ TaskName = NewType("TaskName", str)
 class Context:
     """Task execution context. This class can have dynamic attributes."""
 
+    task: "pyncette.task.Task"
     scheduled_at: datetime.datetime
 
 
 class TaskFunc(Protocol):
     def __call__(self, context: Context) -> Awaitable[None]:
+        ...
+
+
+class MiddlewareFunc(Protocol):
+    def __call__(
+        self, context: Context, next: Callable[[], Awaitable[None]]
+    ) -> Awaitable[None]:
         ...
 
 

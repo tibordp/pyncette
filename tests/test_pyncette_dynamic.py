@@ -1,3 +1,5 @@
+# flake8: noqa
+
 import asyncio
 import datetime
 import time
@@ -5,23 +7,11 @@ from unittest.mock import MagicMock
 
 import dateutil.tz
 import pytest
-from timemachine import TimeMachine
+from timemachine import timemachine
 
 import pyncette
 from pyncette import Context
 from pyncette import Pyncette
-
-
-@pytest.fixture
-def timemachine(monkeypatch):
-    timemachine = TimeMachine(
-        datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC)
-    )
-    monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
-    monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
-    monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
-    monkeypatch.setattr(time, "perf_counter", timemachine.perf_counter)
-    return timemachine
 
 
 @pytest.mark.asyncio

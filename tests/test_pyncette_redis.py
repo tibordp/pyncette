@@ -1,9 +1,12 @@
+# flake8: noqa
+
 import asyncio
 import datetime
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+from timemachine import timemachine
 
 from pyncette import Context
 from pyncette import ExecutionMode
@@ -14,7 +17,7 @@ from pyncette.redis import redis_repository
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_successful_task_interval(monkeypatch):
+async def test_successful_task_interval(timemachine):
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),

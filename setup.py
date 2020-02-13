@@ -74,5 +74,5 @@ setup(
         "croniter>=0.3.31",
         "python-dateutil",
     ],
-    extras_require={"redis": ["aioredis>=1.3.1"]},
+    extras_require={"redis": ["aioredis>=1.3.1"], "prometheus":["prometheus_client>=0.7.1"]},
 )
