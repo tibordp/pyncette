@@ -145,6 +145,8 @@ Middlewares
 
 If you have common logic that should execute around every task invocation, middlewares can be used. Good examples of middlewares are ones used for logging and metrics.
 
+.. code-block:: py
+
     app = Pyncette()
     
     @app.middleware
@@ -290,4 +292,4 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
 Performance
 -----------
 
-Tasks are executed in parallel. If you have a lot of long running tasks, you can set ``concurrency_limit`` in :class:`~pyncette.Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting ``concurrency_limit`` to 1 is equivalent of serializing the execution of all the taks.
+Tasks are executed in parallel. If you have a lot of long running tasks, you can set ``concurrency_limit`` in :class:`~pyncette.Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting ``concurrency_limit`` to 1 is equivalent of serializing the execution of all the tasks.
