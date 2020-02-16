@@ -47,8 +47,8 @@ class _LuaScript:
             try:
                 return await client.evalsha(self._sha, keys=keys, args=args)
             except aioredis.ReplyError as err:
-                logger.warn("We seem to have lost the LUA script, reloading...")
                 if str(err).startswith("NOSCRIPT"):
+                    logger.warn("We seem to have lost the LUA script, reloading...")
                     await self.register(client)
                 else:
                     raise

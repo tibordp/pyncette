@@ -80,24 +80,36 @@ class PyncetteContext:
         await self._repository.register_task(utc_now, concrete_task)
         return concrete_task
 
-    async def unschedule_task(self, task: Task, instance_name: TaskName) -> None:
-        """Removes the conrete instance of a dynamic task"""
-        task_name = cast(TaskName, f"{task.name}:{instance_name}")
-        concrete_task = task.instantiate(task_name, interval=datetime.timedelta())
-        utc_now = _current_time()
+    async def unschedule_task(
+        self, task: Task, instance_name: Optional[TaskName] = None
+    ) -> None:
+        """Removes the concrete instance of a dynamic task"""
 
+        # If we are passed a concrete instance of a dynamic task, we can directly use it,
+        # otherwise we instantiate a dummy one on the fly.
+        if task.parent_task:
+            concrete_task = task
+        else:
+            if not instance_name:
+                raise ValueError("instance name must be provided")
+            task_name = cast(TaskName, f"{task.name}:{instance_name}")
+            concrete_task = task.instantiate(task_name, interval=datetime.timedelta())
+
+        utc_now = _current_time()
         await self._repository.unregister_task(utc_now, concrete_task)
 
     def _populate_context(self, task: Task, poll_response: PollResponse) -> Context:
         context = copy.copy(self._root_context)
+        context.app_context = self
         context.task = task
-        context.__dict__.update(**task.extra_args)
         tz = (
             dateutil.tz.UTC
             if task.timezone is None
             else dateutil.tz.gettz(task.timezone)
         )
         context.scheduled_at = poll_response.scheduled_at.astimezone(tz)
+        context.args = copy.copy(task.extra_args)
+
         return context
 
     async def _execute_task(self, task: Task, poll_response: PollResponse) -> None:

@@ -8,6 +8,7 @@ from typing import Any
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import Dict
 from typing import List
 from typing import NewType
 from typing import Optional
@@ -24,8 +25,10 @@ TaskName = NewType("TaskName", str)
 class Context:
     """Task execution context. This class can have dynamic attributes."""
 
+    app_context: "pyncette.PyncetteContext"
     task: "pyncette.task.Task"
     scheduled_at: datetime.datetime
+    args: Dict[str, Any]
 
 
 class TaskFunc(Protocol):
@@ -70,10 +73,6 @@ class FailureMode(Enum):
     COMMIT = 2
 
 
-if TYPE_CHECKING:
-    import pyncette.task
-
-
 @dataclass
 class PollResponse:
     """The result of a task poll"""
@@ -87,5 +86,9 @@ class PollResponse:
 class QueryResponse:
     """The result of a task query"""
 
-    tasks: List[pyncette.task.Task]
+    tasks: List["pyncette.task.Task"]
     has_more: bool
+
+
+if TYPE_CHECKING:
+    import pyncette.task

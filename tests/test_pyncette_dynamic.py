@@ -53,7 +53,7 @@ async def test_successful_task_interval_dynamic_extra_args(timemachine):
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        counter.execute(context.username)
+        counter.execute(context.args["username"])
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
@@ -82,3 +82,25 @@ async def test_successful_task_interval_dynamic_extra_args(timemachine):
     counter.execute.assert_any_call("bill")
     counter.execute.assert_any_call("steve")
     counter.execute.assert_any_call("tibor")
+
+
+@pytest.mark.asyncio
+async def test_execute_once(timemachine):
+    app = Pyncette()
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+        await context.app_context.unschedule_task(context.task)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1))
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.close()
+
+    assert counter.execute.call_count == 1

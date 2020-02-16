@@ -51,7 +51,7 @@ async def test_dynamic(monkeypatch):
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        getattr(counter, context.username)()
+        getattr(counter, context.args["username"])()
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
@@ -145,7 +145,9 @@ async def test_dynamic_cron_timezones(monkeypatch):
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        getattr(counter, context.username)(context.scheduled_at.tzinfo.utcoffset(None))
+        getattr(counter, context.args["username"])(
+            context.scheduled_at.tzinfo.utcoffset(None)
+        )
 
     async with app.create() as ctx:
         await asyncio.gather(
@@ -199,3 +201,29 @@ async def test_dynamic_batch_size(monkeypatch):
         await task
 
     assert counter.execute.call_count == 20
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_unregister_before_commit(monkeypatch):
+    app = Pyncette(
+        redis_url="redis://localhost",
+        redis_namespace=str(uuid4()),
+        repository_factory=redis_repository,
+    )
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter()
+        await context.app_context.unschedule_task(context.task)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1))
+        await asyncio.sleep(5)
+        ctx.shutdown()
+        await task
+
+    assert counter.call_count == 1

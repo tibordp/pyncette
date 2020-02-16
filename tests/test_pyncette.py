@@ -403,8 +403,8 @@ async def test_extra_args(timemachine):
 
     @app.task(interval=datetime.timedelta(seconds=2), foo="bar", quux=123)
     async def successful_task(context: Context) -> None:
-        counter.foo = context.foo
-        counter.quux = context.quux
+        counter.foo = context.args["foo"]
+        counter.quux = context.args["quux"]
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
