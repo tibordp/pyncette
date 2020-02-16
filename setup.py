@@ -37,6 +37,7 @@ setup(
     author="Tibor Djurica Potpara",
     author_email="tibor.djurica@ojdip.net",
     url="https://github.com/tibordp/pyncette",
+    package_data={"pyncette": ["py.typed"]},
     packages=find_packages("src"),
     package_dir={"": "src"},
     py_modules=[splitext(basename(path))[0] for path in glob("src/*.py")],
@@ -44,7 +45,7 @@ setup(
     zip_safe=False,
     classifiers=[
         # complete classifier list: http://pypi.python.org/pypi?%3Aaction=list_classifiers
-        "Development Status :: 2 - Pre-Alpha",
+        "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
         "License :: OSI Approved :: MIT License",
         "Operating System :: Unix",
@@ -74,5 +75,8 @@ setup(
         "croniter>=0.3.31",
         "python-dateutil",
     ],
-    extras_require={"redis": ["aioredis>=1.3.1"], "prometheus":["prometheus_client>=0.7.1"]},
+    extras_require={
+        "redis": ["aioredis>=1.3.1"],
+        "prometheus": ["prometheus_client>=0.7.1"],
+    },
 )

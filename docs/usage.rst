@@ -48,8 +48,8 @@ There are two ways a schedule can be specified, one is with the cron-like syntax
     async def every_10_seconds(context: Context):
         ...
 
-    @app.task(schedule="30 4 * * * *")
-    async def every_day_at_4_30_pm(context: Context):
+    @app.task(schedule="20 4 * * * *")
+    async def every_day_at_4_20_am(context: Context):
         ...
 
 The other way is with an interval::
