@@ -32,7 +32,6 @@ class DefaultScheduler(contextlib.AbstractAsyncContextManager):
         traceback: Optional[Any],
     ) -> None:
         if self._tasks:
-            logging.debug(f"{exc_type}, {exc_value}, {traceback}")
             if exc_type == asyncio.CancelledError:
                 logger.warning("Cancelling remaining tasks.")
                 for task in self._tasks.values():

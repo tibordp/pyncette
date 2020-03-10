@@ -79,6 +79,7 @@ class PollResponse:
 
     result: ResultType
     scheduled_at: datetime.datetime
+    locked_until: Optional[datetime.datetime]
     lease: Optional[Lease]
 
 
@@ -88,6 +89,7 @@ class QueryResponse:
 
     tasks: List["pyncette.task.Task"]
     has_more: bool
+    next_execution_hint: Optional[datetime.datetime]
 
 
 if TYPE_CHECKING:

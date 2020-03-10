@@ -80,7 +80,9 @@ class InMemoryRepository(Repository):
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         return QueryResponse(
-            tasks=list(self._dynamic_tasks[task.name].values()), has_more=False
+            tasks=list(self._dynamic_tasks[task.name].values()),
+            has_more=False,
+            next_execution_hint=None,
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:

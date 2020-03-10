@@ -227,3 +227,29 @@ async def test_unregister_before_commit(monkeypatch):
         await task
 
     assert counter.call_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_small_interval(monkeypatch):
+    app = Pyncette(
+        min_poll_interval=datetime.timedelta(0),
+        max_poll_interval=datetime.timedelta(seconds=100),
+        redis_url="redis://localhost",
+        redis_namespace=str(uuid4()),
+        repository_factory=redis_repository,
+    )
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(milliseconds=500))
+    async def successful_task(context: Context) -> None:
+        counter()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await asyncio.sleep(10.05)
+        ctx.shutdown()
+        await task
+
+    assert counter.call_count == 2

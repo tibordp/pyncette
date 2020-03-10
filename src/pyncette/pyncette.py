@@ -143,7 +143,9 @@ class PyncetteContext:
 
     async def _get_active_tasks(
         self, utc_now: datetime.datetime
-    ) -> AsyncIterator[Task]:
+    ) -> AsyncIterator[Any[Task, Optional[datetime.datetime]]]:
+        next_execution_hint: Optional[datetime.datetime] = None
+
         for task in self._app._concrete_tasks:
             yield task
         for task in self._app._dynamic_tasks:
@@ -152,17 +154,33 @@ class PyncetteContext:
                 for concrete_task in query_response.tasks:
                     yield concrete_task
 
+                if query_response.next_execution_hint:
+                    next_execution_hint = (
+                        min(next_execution_hint, query_response.next_execution_hint)
+                        if next_execution_hint
+                        else query_response.next_execution_hint
+                    )
+
                 if not query_response.has_more:
                     break
 
                 logger.debug(f"Dynamic {task} has more due instances, looping.")
 
-    async def _tick(self) -> None:
-        utc_now = _current_time()
+        if next_execution_hint is not None:
+            yield next_execution_hint
+
+    async def _tick(self, utc_now: datetime.datetime) -> Optional[datetime.datetime]:
+        next_execution_hint: Optional[datetime.datetime] = None
 
         async for task in self._get_active_tasks(utc_now):
             if self._shutting_down.is_set():
                 break
+
+            if isinstance(task, datetime.datetime):
+                next_execution_hint = (
+                    min(next_execution_hint, task) if next_execution_hint else task
+                )
+                continue
 
             poll_response = await self._repository.poll_task(utc_now, task)
             if poll_response.result == ResultType.READY:
@@ -174,26 +192,51 @@ class PyncetteContext:
                 logger.debug(
                     f"Not executing task {task}, because it is not yet scheduled."
                 )
+                next_execution_hint = (
+                    min(next_execution_hint, poll_response.scheduled_at)
+                    if next_execution_hint
+                    else poll_response.scheduled_at
+                )
             elif poll_response.result == ResultType.LOCKED:
                 logger.debug(f"Not executing task {task}, because it is locked.")
+                next_execution_hint = (
+                    min(next_execution_hint, poll_response.locked_until)
+                    if next_execution_hint
+                    else poll_response.locked_until
+                )
+
+        return next_execution_hint
+
+    async def _sleep(self, next_execution_hint) -> None:
+        if not next_execution_hint:
+            sleep_interval = self._app._min_poll_interval
+        else:
+            sleep_interval = max(
+                self._app._min_poll_interval,
+                min(
+                    next_execution_hint - _current_time(), self._app._max_poll_interval
+                ),
+            )
+        try:
+            await asyncio.wait_for(
+                self._shutting_down.wait(), timeout=sleep_interval.total_seconds(),
+            )
+        except asyncio.TimeoutError:
+            pass
 
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
         while not self._shutting_down.is_set():
+            next_execution_hint: Optional[datetime.datetime] = None
             try:
-                await self._tick()
+                utc_now = _current_time()
+                next_execution_hint = await self._tick(utc_now)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.warning("Polling tasks failed.", exc_info=e)
 
-            try:
-                await asyncio.wait_for(
-                    self._shutting_down.wait(),
-                    timeout=self._app._poll_interval.total_seconds(),
-                )
-            except asyncio.TimeoutError:
-                pass
+            await self._sleep(next_execution_hint)
 
     def shutdown(self) -> None:
         """Initiates graceful shutdown, terminating the main loop, but allowing all executing tasks to finish."""
@@ -209,14 +252,16 @@ class Pyncette:
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _middlewares: List[MiddlewareFunc]
     _repository_factory: RepositoryFactory
-    _poll_interval: datetime.timedelta
+    _min_poll_interval: datetime.timedelta
+    _max_poll_interval: datetime.timedelta
     _concurrency_limit: int
     _configuration: Dict[str, Any]
 
     def __init__(
         self,
         repository_factory: RepositoryFactory = in_memory_repository,
-        poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
+        min_poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
+        max_poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
         concurrency_limit: int = 100,
         **kwargs: Any,
     ) -> None:
@@ -224,10 +269,19 @@ class Pyncette:
         self._dynamic_tasks = []
         self._fixtures = []
         self._middlewares = []
-        self._poll_interval = poll_interval
+        self._min_poll_interval = min_poll_interval
+        self._max_poll_interval = max_poll_interval
         self._concurrency_limit = concurrency_limit
         self._repository_factory = repository_factory
         self._configuration = kwargs
+
+        if self._min_poll_interval > self._max_poll_interval:
+            raise ValueError(
+                "min_poll_interval must be less or equal to max_poll_interval"
+            )
+
+        if self._min_poll_interval < datetime.timedelta():
+            raise ValueError("min_poll_interval must be non-negative")
 
     def task(self, **kwargs: Any) -> Decorator[TaskFunc]:
         """Decorator for marking the coroutine as a task"""

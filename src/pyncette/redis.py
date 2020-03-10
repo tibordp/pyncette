@@ -79,7 +79,7 @@ class RedisRepository(Repository):
     limit = tonumber(limit)
 
     local tasksets = redis.call('zrangebylex', KEYS[1], '-', '(' .. utc_now .. '`', 'LIMIT', 0, limit + 1)
-    local results = { "READY" }
+    local results = { "READY", '' }
 
     local function getTasksetKey(key, a1, a2)
       if not a1 or a1 < a2 then
@@ -93,16 +93,16 @@ class RedisRepository(Repository):
         local task_name = value:gmatch('_(.*)')()
         local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', task_name, 'version', 'execute_after', 'locked_until', 'task_spec'))
 
-        redis.call('zrem', KEYS[1], getTasksetKey(task_name, locked_until, execute_after))
-        version, locked_until = version + 1, incoming_locked_until
-        redis.call('hmset', task_name, 'version', version, 'locked_until', incoming_locked_until)
-        redis.call('zadd', KEYS[1], 0, getTasksetKey(task_name, locked_until, execute_after))
-
-        results[key + 1] = { "READY", version, execute_after, locked_until, task_spec }
+        results[key + 2] = { "READY", version, execute_after, locked_until, task_spec }
         if key == limit then
             results[1] = "HAS_MORE"
-            break
+            return results
         end
+    end
+
+    local next_taskset = redis.call('zrangebylex', KEYS[1], '(' .. utc_now .. '`', '+', 'LIMIT', 0, 1)
+    if next_taskset[1] then
+        results[2] = next_taskset[1]:gmatch('(.*)_')()
     end
 
     return results
@@ -149,9 +149,7 @@ class RedisRepository(Repository):
     end
 
     local result
-    if locked_until and utc_now < locked_until and version == incoming_version then
-        result = "READY"
-    elseif locked_until and utc_now < locked_until then
+    if locked_until and utc_now < locked_until then
         result = "LOCKED"
     elseif execute_after < utc_now and version ~= incoming_version then
         result = "LEASE_MISMATCH"
@@ -233,9 +231,12 @@ class RedisRepository(Repository):
         return QueryResponse(
             tasks=[
                 self._create_dynamic_task(task, response_data)
-                for response_data in response[1:]
+                for response_data in response[2:]
             ],
             has_more=response[0] == b"HAS_MORE",
+            next_execution_hint=None
+            if not response[1]
+            else datetime.datetime.fromisoformat(response[1].decode()),
         )
 
     def _create_dynamic_task(self, task: Task, response_data: List[bytes]) -> Task:
@@ -323,6 +324,7 @@ class RedisRepository(Repository):
                 return PollResponse(
                     result=response.result,
                     scheduled_at=execute_after,
+                    locked_until=response.locked_until,
                     lease=Lease(response),
                 )
             else:

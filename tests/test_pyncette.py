@@ -103,7 +103,10 @@ async def test_successful_task_interval(timemachine):
 
 @pytest.mark.asyncio
 async def test_successful_task_cronspec(timemachine):
-    app = Pyncette(poll_interval=datetime.timedelta(seconds=30))
+    app = Pyncette(
+        min_poll_interval=datetime.timedelta(seconds=30),
+        max_poll_interval=datetime.timedelta(seconds=3600)
+    )
 
     counter = MagicMock()
 
@@ -122,7 +125,7 @@ async def test_successful_task_cronspec(timemachine):
 
 
 @pytest.mark.asyncio
-async def test_failed_task_retried_on_every_tick_if_unlock(timemachine):
+async def test_failed_task_retried_immediately_if_unlock(timemachine):
     app = Pyncette()
 
     counter = MagicMock()
@@ -440,7 +443,10 @@ async def test_multi_task(timemachine):
 
 @pytest.mark.asyncio
 async def test_timezone_support(timemachine):
-    app = Pyncette(poll_interval=datetime.timedelta(minutes=10))
+    app = Pyncette(
+        min_poll_interval=datetime.timedelta(minutes=10),
+        max_poll_interval=datetime.timedelta(seconds=3600)
+    )
 
     counter = MagicMock()
 
