@@ -2,24 +2,27 @@ import contextlib
 import datetime
 import json
 import logging
+import uuid
 from dataclasses import dataclass
+from importlib.resources import read_text
 from typing import Any
 from typing import AsyncIterator
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Tuple
 from typing import cast
 
 import aioredis
 
-from .errors import PyncetteException
-from .model import ExecutionMode
-from .model import Lease
-from .model import PollResponse
-from .model import QueryResponse
-from .model import ResultType
-from .repository import Repository
-from .task import Task
+from pyncette.errors import PyncetteException
+from pyncette.model import ExecutionMode
+from pyncette.model import Lease
+from pyncette.model import PollResponse
+from pyncette.model import QueryResponse
+from pyncette.model import ResultType
+from pyncette.repository import Repository
+from pyncette.task import Task
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +33,8 @@ class _LuaScript:
     _script: str
     _sha: Optional[str]
 
-    def __init__(self, script: str):
-        self._script = script
+    def __init__(self, script_path: str):
+        self._script = read_text(__name__, script_path)
         self._sha = None
 
     async def register(self, client: aioredis.Redis) -> None:
@@ -63,6 +66,7 @@ class _ScriptResponse:
     execute_after: Optional[datetime.datetime]
     locked_until: Optional[datetime.datetime]
     task_spec: Optional[Dict[str, Any]]
+    locked_by: Optional[str]
 
 
 class RedisRepository(Repository):
@@ -73,151 +77,16 @@ class RedisRepository(Repository):
     _poll_script: _LuaScript
     _commit_script: _LuaScript
     _query_script: _LuaScript
-
-    _QUERY_LUA = """
-    local utc_now, limit, incoming_locked_until = unpack(ARGV)
-    limit = tonumber(limit)
-
-    local tasksets = redis.call('zrangebylex', KEYS[1], '-', '(' .. utc_now .. '`', 'LIMIT', 0, limit + 1)
-    local results = { "READY" }
-
-    local function getTasksetKey(key, a1, a2)
-      if not a1 or a1 < a2 then
-        return a2 .. '_' .. key
-      else
-        return a1 .. '_' .. key
-      end
-    end
-
-    for key,value in pairs(tasksets) do
-        local task_name = value:gmatch('_(.*)')()
-        local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', task_name, 'version', 'execute_after', 'locked_until', 'task_spec'))
-
-        redis.call('zrem', KEYS[1], getTasksetKey(task_name, locked_until, execute_after))
-        version, locked_until = version + 1, incoming_locked_until
-        redis.call('hmset', task_name, 'version', version, 'locked_until', incoming_locked_until)
-        redis.call('zadd', KEYS[1], 0, getTasksetKey(task_name, locked_until, execute_after))
-
-        results[key + 1] = { "READY", version, execute_after, locked_until, task_spec }
-        if key == limit then
-            results[1] = "HAS_MORE"
-            break
-        end
-    end
-
-    return results
-    """
-
-    _UNREGISTER_LUA = """
-    local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
-    local function getTasksetKey(key, a1, a2)
-      if not a1 or a1 < a2 then
-        return a2 .. '_' .. key
-      else
-        return a1 .. '_' .. key
-      end
-    end
-
-    local result
-    if execute_after then
-        redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
-        redis.call('del', KEYS[1])
-        result = "READY"
-    else
-        result = "MISSING"
-    end
-
-    return { result, version, execute_after, locked_until, task_spec }
-    """
-
-    _POLL_LUA = """
-    local mode, utc_now, incoming_version, incoming_execute_after, incoming_locked_until = unpack(ARGV)
-    local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
-
-    local function getTasksetKey(key, a1, a2)
-      if not a1 or a1 < a2 then
-        return a2 .. '_' .. key
-      else
-        return a1 .. '_' .. key
-      end
-    end
-
-    if not version then
-        version, execute_after = incoming_version, incoming_execute_after
-        redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after)
-        redis.call('zadd', KEYS[2], 0, getTasksetKey(KEYS[1], locked_until, execute_after))
-    end
-
-    local result
-    if locked_until and utc_now < locked_until and version == incoming_version then
-        result = "READY"
-    elseif locked_until and utc_now < locked_until then
-        result = "LOCKED"
-    elseif execute_after < utc_now and version ~= incoming_version then
-        result = "LEASE_MISMATCH"
-    elseif execute_after < utc_now and mode == 'AT_MOST_ONCE' then
-        redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
-        version, execute_after, locked_until = version + 1, incoming_execute_after, nil
-        redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after)
-        redis.call('hdel', KEYS[1], 'locked_until')
-        redis.call('zadd', KEYS[2], 0, getTasksetKey(KEYS[1], locked_until, execute_after))
-        result = "READY"
-    elseif execute_after < utc_now and mode == 'AT_LEAST_ONCE' then
-        redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
-        version, locked_until = version + 1, incoming_locked_until
-        redis.call('hmset', KEYS[1], 'version', version, 'locked_until', incoming_locked_until)
-        redis.call('zadd', KEYS[2], 0, getTasksetKey(KEYS[1], locked_until, execute_after))
-        result = "READY"
-    else
-        result = "PENDING"
-    end
-
-    return { result, version, execute_after, locked_until, task_spec }
-    """
-
-    _COMMIT_LUA = """
-    local incoming_version, incoming_execute_after = unpack(ARGV)
-    local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
-    local taskset_suffix = '_' .. KEYS[1]
-
-    local function getTasksetKey(key, a1, a2)
-      if not a1 or a1 < a2 then
-        return a2 .. '_' .. key
-      else
-        return a1 .. '_' .. key
-      end
-    end
-
-    local result
-    if incoming_execute_after and version == incoming_version then
-        redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
-        version, execute_after, locked_until = version + 1, incoming_execute_after, nil
-        redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after)
-        redis.call('hdel', KEYS[1], 'locked_until')
-        redis.call('zadd', KEYS[2], 0, getTasksetKey(KEYS[1], locked_until, execute_after))
-        result = "READY"
-    elseif not incoming_execute_after and version == incoming_version then
-        redis.call('zrem', KEYS[2], getTasksetKey(KEYS[1], locked_until, execute_after))
-        version, locked_until = version + 1, nil
-        redis.call('hset', KEYS[1], 'version', version)
-        redis.call('hdel', KEYS[1], 'locked_until')
-        redis.call('zadd', KEYS[2], 0, getTasksetKey(KEYS[1], locked_until, execute_after))
-        result = "READY"
-    else
-        result = "LEASE_MISMATCH"
-    end
-
-    return { result, version, execute_after, locked_until, task_spec }
-    """
+    _unregister_script: _LuaScript
 
     def __init__(self, redis_client: aioredis.Redis, **kwargs: Any):
         self._redis_client = redis_client
         self._namespace = kwargs.get("redis_namespace", "")
         self._batch_size = kwargs.get("redis_batch_size", 100)
-        self._poll_script = _LuaScript(self._POLL_LUA)
-        self._commit_script = _LuaScript(self._COMMIT_LUA)
-        self._query_script = _LuaScript(self._QUERY_LUA)
-        self._unregister_script = _LuaScript(self._UNREGISTER_LUA)
+        self._poll_script = _LuaScript("poll.lua")
+        self._commit_script = _LuaScript("commit.lua")
+        self._query_script = _LuaScript("query.lua")
+        self._unregister_script = _LuaScript("unregister.lua")
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         new_locked_until = utc_now + task.lease_duration
@@ -226,7 +95,12 @@ class RedisRepository(Repository):
             keys=[
                 f"pyncette:{self._namespace}:taskset:{task.name if task else '__global__'}"
             ],
-            args=[utc_now.isoformat(), self._batch_size, new_locked_until.isoformat(),],
+            args=[
+                utc_now.isoformat(),
+                self._batch_size,
+                new_locked_until.isoformat(),
+                str(uuid.uuid4()),
+            ],
         )
         logger.debug(f"query_lua script returned [{self._batch_size}] {response}")
 
@@ -238,7 +112,9 @@ class RedisRepository(Repository):
             has_more=response[0] == b"HAS_MORE",
         )
 
-    def _create_dynamic_task(self, task: Task, response_data: List[bytes]) -> Task:
+    def _create_dynamic_task(
+        self, task: Task, response_data: List[bytes]
+    ) -> Tuple[Task, Lease]:
         task_data = self._parse_response(response_data)
         task_spec = task_data.task_spec
         assert task_spec is not None
@@ -252,9 +128,7 @@ class RedisRepository(Repository):
             **task_spec["extra_args"],
             timezone=task_spec["timezone"],
         )
-
-        task._last_lease = task_data  # type: ignore
-        return task
+        return (task, Lease(task_data))
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""
@@ -276,8 +150,6 @@ class RedisRepository(Repository):
         await self.poll_task(utc_now, task)
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        # FIXME: There is a potential race condition if we unregister the task while it is executing, it could be added
-        # back to the taskset set by the commit method.
         response = await self._unregister_script.execute(
             self._redis_client,
             keys=[
@@ -288,7 +160,9 @@ class RedisRepository(Repository):
         )
         logger.debug(f"unregister_lua script returned {response}")
 
-    async def poll_task(self, utc_now: datetime.datetime, task: Task) -> PollResponse:
+    async def poll_task(
+        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
+    ) -> PollResponse:
         # Nominally, we need at least two round-trips to Redis since the next execute_after is calculated
         # in Python code due to extra flexibility. This is why we have optimistic locking below to ensure that
         # the next execution time was calculated using a correct base if another process modified it in between.
@@ -296,15 +170,22 @@ class RedisRepository(Repository):
         # so by caching it, we can poll a task using a single round-trip (if we are wrong, the loop below will still
         # ensure corretness as the version will not match).
         last_lease = getattr(task, "_last_lease", None)
-        if last_lease is not None:
+        if isinstance(lease, _ScriptResponse):
+            version, execute_after, locked_by = (
+                lease.version,
+                lease.execute_after,
+                lease.locked_by,
+            )
+        elif last_lease is not None:
             logger.debug("Using cached values for execute_after")
-            version, execute_after = (
+            version, execute_after, locked_by = (
                 last_lease.version,
                 last_lease.execute_after,
+                str(uuid.uuid4()),
             )
         else:
             # By default we assume that the task is brand new
-            version, execute_after = 0, None
+            version, execute_after, locked_by = 0, None, str(uuid.uuid4())
 
         new_locked_until = utc_now + task.lease_duration
         for _ in range(5):
@@ -316,6 +197,7 @@ class RedisRepository(Repository):
                 version,
                 next_execution,
                 new_locked_until,
+                locked_by,
             )
             task._last_lease = response  # type: ignore
 
@@ -364,6 +246,7 @@ class RedisRepository(Repository):
         version: int,
         execute_after: datetime.datetime,
         locked_until: datetime.datetime,
+        locked_by: Optional[str],
     ) -> _ScriptResponse:
         response = await self._poll_script.execute(
             self._redis_client,
@@ -377,6 +260,7 @@ class RedisRepository(Repository):
                 version,
                 execute_after.isoformat(),
                 locked_until.isoformat(),
+                locked_by,
             ],
         )
         logger.debug(f"poll_lua script returned {response}")
@@ -419,6 +303,9 @@ class RedisRepository(Repository):
             task_spec=None
             if len(response) <= 4 or response[4] is None
             else json.loads(response[4]),
+            locked_by=None
+            if len(response) <= 5 or response[5] is None
+            else str(response[5]),
         )
 
 

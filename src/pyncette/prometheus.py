@@ -8,6 +8,7 @@ from typing import Awaitable
 from typing import Callable
 from typing import Dict
 from typing import List
+from typing import Optional
 
 from prometheus_client import Counter
 from prometheus_client import Gauge
@@ -107,12 +108,14 @@ class MeteredRepository(Repository):
         ):
             return await self._inner.unregister_task(utc_now, task)
 
-    async def poll_task(self, utc_now: datetime.datetime, task: Task) -> PollResponse:
+    async def poll_task(
+        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
+    ) -> PollResponse:
         """Polls the task to determine whether it is ready for execution"""
         async with self._metric_set.measure(
             operation="poll_task", **_get_task_labels(task)
         ):
-            return await self._inner.poll_task(utc_now, task)
+            return await self._inner.poll_task(utc_now, task, lease)
 
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease

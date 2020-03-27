@@ -42,7 +42,9 @@ class Repository(abc.ABC):
         pass
 
     @abc.abstractmethod
-    async def poll_task(self, utc_now: datetime.datetime, task: Task) -> PollResponse:
+    async def poll_task(
+        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
+    ) -> PollResponse:
         """Polls the task to determine whether it is ready for execution"""
         pass
 
@@ -80,7 +82,10 @@ class InMemoryRepository(Repository):
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         return QueryResponse(
-            tasks=list(self._dynamic_tasks[task.name].values()), has_more=False
+            tasks=[
+                (task, Lease(None)) for task in self._dynamic_tasks[task.name].values()
+            ],
+            has_more=False,
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
@@ -91,7 +96,9 @@ class InMemoryRepository(Repository):
         assert task.parent_task is not None
         self._dynamic_tasks[task.parent_task.name].pop(task.name, None)
 
-    async def poll_task(self, utc_now: datetime.datetime, task: Task) -> PollResponse:
+    async def poll_task(
+        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
+    ) -> PollResponse:
         task_data = self._data.get(task.name, None)
 
         if task_data is None:
@@ -99,15 +106,19 @@ class InMemoryRepository(Repository):
             self._data[task.name] = task_data
 
         logger.debug(
-            f"task={task} locked_until={task_data.get('locked_until', None)} execute_after={task_data.get('execute_after', None)}"
+            f"task={task} locked_until={task_data.get('locked_until', None)} execute_after={task_data.get('execute_after', None)} locked_by={task_data.get('locked_by', None)}"
         )
 
         locked_until = task_data.get("locked_until", None)
-        lease: Optional[Lease] = None
+        task_lease = task_data.get("locked_by", None)
         result: ResultType
         scheduled_at = task_data["execute_after"]
 
-        if locked_until is not None and locked_until > utc_now:
+        if (
+            locked_until is not None
+            and locked_until > utc_now
+            and (lease is not task_lease)
+        ):
             result = ResultType.LOCKED
         elif (
             scheduled_at <= utc_now
@@ -120,14 +131,14 @@ class InMemoryRepository(Repository):
             scheduled_at <= utc_now
             and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
         ):
-            lease = Lease(object())
+            task_lease = Lease(object())
             task_data["locked_until"] = utc_now + task.lease_duration
-            task_data["locked_by"] = lease
+            task_data["locked_by"] = task_lease
             result = ResultType.READY
         else:
             result = ResultType.PENDING
 
-        return PollResponse(result=result, scheduled_at=scheduled_at, lease=lease,)
+        return PollResponse(result=result, scheduled_at=scheduled_at, lease=task_lease,)
 
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease

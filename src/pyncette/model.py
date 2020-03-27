@@ -12,6 +12,7 @@ from typing import Dict
 from typing import List
 from typing import NewType
 from typing import Optional
+from typing import Tuple
 from typing import TypeVar
 
 from typing_extensions import Protocol
@@ -86,7 +87,7 @@ class PollResponse:
 class QueryResponse:
     """The result of a task query"""
 
-    tasks: List["pyncette.task.Task"]
+    tasks: List[Tuple["pyncette.task.Task", Lease]]
     has_more: bool
 
 
