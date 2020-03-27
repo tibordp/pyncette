@@ -11,7 +11,6 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
-from typing import cast
 
 import aioredis
 
@@ -219,12 +218,14 @@ class RedisRepository(Repository):
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        poll_response = cast(_ScriptResponse, lease)
+        assert isinstance(lease, _ScriptResponse)
+        assert lease.locked_by is not None
+
         response = await self._commit_record(
             task,
-            poll_response.version,
-            task.get_next_execution(utc_now, poll_response.execute_after),
-            poll_response.locked_by,
+            lease.version,
+            task.get_next_execution(utc_now, lease.execute_after),
+            lease.locked_by,
         )
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
@@ -233,10 +234,10 @@ class RedisRepository(Repository):
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        poll_response = cast(_ScriptResponse, lease)
-        response = await self._commit_record(
-            task, poll_response.version, None, poll_response.locked_by
-        )
+        assert isinstance(lease, _ScriptResponse)
+        assert lease.locked_by is not None
+
+        response = await self._commit_record(task, lease.version, None, lease.locked_by)
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not unlocking, as we have lost the lease")
