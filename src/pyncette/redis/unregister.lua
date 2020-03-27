@@ -1,4 +1,4 @@
-local version, execute_after, locked_until, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'task_spec'))
+local version, execute_after, locked_until, locked_by, task_spec = unpack(redis.call('hmget', KEYS[1], 'version', 'execute_after', 'locked_until', 'locked_by', 'task_spec'))
 local function getTasksetKey(key, a1, a2)
     if not a1 or a1 < a2 then
     return a2 .. '_' .. key
@@ -16,4 +16,4 @@ else
     result = "MISSING"
 end
 
-return { result, version, execute_after, locked_until, task_spec }
+return { result, version, execute_after, locked_until, locked_by, task_spec }

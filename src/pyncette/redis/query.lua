@@ -21,7 +21,7 @@ for key,value in pairs(tasksets) do
     redis.call('hmset', task_name, 'version', version, 'locked_until', locked_until, 'locked_by', locked_by)
     redis.call('zadd', KEYS[1], 0, getTasksetKey(task_name, locked_until, execute_after))
 
-    results[key + 1] = { "READY", version, execute_after, locked_until, task_spec, locked_by }
+    results[key + 1] = { "READY", version, execute_after, locked_until, locked_by, task_spec }
     if key == limit then
         results[1] = "HAS_MORE"
         break

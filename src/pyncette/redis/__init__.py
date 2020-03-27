@@ -224,6 +224,7 @@ class RedisRepository(Repository):
             task,
             poll_response.version,
             task.get_next_execution(utc_now, poll_response.execute_after),
+            poll_response.locked_by,
         )
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
@@ -233,7 +234,9 @@ class RedisRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         poll_response = cast(_ScriptResponse, lease)
-        response = await self._commit_record(task, poll_response.version, None)
+        response = await self._commit_record(
+            task, poll_response.version, None, poll_response.locked_by
+        )
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not unlocking, as we have lost the lease")
@@ -267,7 +270,11 @@ class RedisRepository(Repository):
         return self._parse_response(response)
 
     async def _commit_record(
-        self, task: Task, version: int, execute_after: Optional[datetime.datetime],
+        self,
+        task: Task,
+        version: int,
+        execute_after: Optional[datetime.datetime],
+        locked_by: str,
     ) -> _ScriptResponse:
         response = await self._commit_script.execute(
             self._redis_client,
@@ -277,6 +284,7 @@ class RedisRepository(Repository):
             ],
             args=[
                 version,
+                locked_by,
                 *([] if execute_after is None else [execute_after.isoformat()]),
             ],
         )
@@ -300,12 +308,12 @@ class RedisRepository(Repository):
             locked_until=None
             if len(response) <= 3 or response[3] is None
             else datetime.datetime.fromisoformat(response[3].decode()),
-            task_spec=None
-            if len(response) <= 4 or response[4] is None
-            else json.loads(response[4]),
             locked_by=None
+            if len(response) <= 4 or response[4] is None
+            else response[4].decode(),
+            task_spec=None
             if len(response) <= 5 or response[5] is None
-            else str(response[5]),
+            else json.loads(response[5]),
         )
 
 

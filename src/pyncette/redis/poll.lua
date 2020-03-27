@@ -38,4 +38,4 @@ else
     result = "PENDING"
 end
 
-return { result, version, execute_after, locked_until, task_spec, locked_by }
+return { result, version, execute_after, locked_until, locked_by, task_spec}
