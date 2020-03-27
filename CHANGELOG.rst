@@ -2,6 +2,13 @@
 Changelog
 =========
 
+0.5.0 (2020-03-27)
+------------------
+
+* Fixes bug where a locked dynamic task could be executed again on next tick.
+* poll_task is now reentrant with regards to locking. If the lease passed in matches the lease on the task, it behaves as though it were unlocked.
+
+
 0.4.0 (2020-02-16)
 ------------------
 

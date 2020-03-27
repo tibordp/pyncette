@@ -16,7 +16,7 @@ from pyncette.redis import redis_repository
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_successful_task_interval(monkeypatch):
+async def test_successful_task_interval():
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),
@@ -40,7 +40,7 @@ async def test_successful_task_interval(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_dynamic(monkeypatch):
+async def test_dynamic():
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),
@@ -79,7 +79,37 @@ async def test_dynamic(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_failing_task_interval(monkeypatch):
+async def test_dynamic_locked():
+    app = Pyncette(
+        redis_url="redis://localhost",
+        redis_namespace=str(uuid4()),
+        repository_factory=redis_repository,
+    )
+
+    counter = MagicMock()
+
+    @app.dynamic_task(lease_duration=datetime.timedelta(seconds=4))
+    async def hello(context: Context) -> None:
+        counter.started()
+        await asyncio.sleep(2)
+        counter.finished()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await asyncio.gather(
+            ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1)),
+        )
+        await asyncio.sleep(4.5)
+        ctx.shutdown()
+        await task
+
+    assert counter.started.call_count == 2
+    assert counter.finished.call_count == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_failing_task_interval():
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),
@@ -106,7 +136,7 @@ async def test_failing_task_interval(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_failing_task_interval_best_effort(monkeypatch):
+async def test_failing_task_interval_best_effort():
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),
@@ -134,7 +164,7 @@ async def test_failing_task_interval_best_effort(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_dynamic_cron_timezones(monkeypatch):
+async def test_dynamic_cron_timezones():
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),
@@ -172,7 +202,7 @@ async def test_dynamic_cron_timezones(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_dynamic_batch_size(monkeypatch):
+async def test_dynamic_batch_size():
     """We are able to process all thre instances of the dynamic task in one tick, even though batch size is set to one"""
 
     app = Pyncette(
@@ -205,7 +235,7 @@ async def test_dynamic_batch_size(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-async def test_unregister_before_commit(monkeypatch):
+async def test_unregister_before_commit():
     app = Pyncette(
         redis_url="redis://localhost",
         redis_namespace=str(uuid4()),

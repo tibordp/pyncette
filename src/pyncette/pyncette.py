@@ -27,6 +27,7 @@ from .model import Decorator
 from .model import ExecutionMode
 from .model import FailureMode
 from .model import FixtureFunc
+from .model import Lease
 from .model import MiddlewareFunc
 from .model import PollResponse
 from .model import ResultType
@@ -143,14 +144,14 @@ class PyncetteContext:
 
     async def _get_active_tasks(
         self, utc_now: datetime.datetime
-    ) -> AsyncIterator[Task]:
+    ) -> AsyncIterator[Tuple[Task, Optional[Lease]]]:
         for task in self._app._concrete_tasks:
-            yield task
+            yield (task, None)
         for task in self._app._dynamic_tasks:
             while not self._shutting_down.is_set():
                 query_response = await self._repository.query_task(utc_now, task)
-                for concrete_task in query_response.tasks:
-                    yield concrete_task
+                for task_and_lease in query_response.tasks:
+                    yield task_and_lease
 
                 if not query_response.has_more:
                     break
@@ -160,11 +161,11 @@ class PyncetteContext:
     async def _tick(self) -> None:
         utc_now = _current_time()
 
-        async for task in self._get_active_tasks(utc_now):
+        async for task, lease in self._get_active_tasks(utc_now):
             if self._shutting_down.is_set():
                 break
 
-            poll_response = await self._repository.poll_task(utc_now, task)
+            poll_response = await self._repository.poll_task(utc_now, task, lease)
             if poll_response.result == ResultType.READY:
                 logger.info(f"Executing task {task} with {task.extra_args}")
                 await self._scheduler.spawn_task(
