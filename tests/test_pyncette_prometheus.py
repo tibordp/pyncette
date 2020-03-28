@@ -16,6 +16,7 @@ from pyncette.repository import in_memory_repository
 
 
 @pytest.mark.asyncio
+@pytest.mark.prometheus
 async def test_successful_task_interval(timemachine):
     app = Pyncette(repository_factory=prometheus_repository(in_memory_repository),)
     app.middleware(prometheus_middleware)

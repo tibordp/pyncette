@@ -11,17 +11,17 @@ from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
-from pyncette.redis import redis_repository
+from pyncette.postgres import postgres_repository
 
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
+@pytest.mark.postgres
 async def test_successful_task_interval():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -41,12 +41,12 @@ async def test_successful_task_interval():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
+@pytest.mark.postgres
 async def test_dynamic():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -81,12 +81,11 @@ async def test_dynamic():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
 async def test_dynamic_locked():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -112,12 +111,11 @@ async def test_dynamic_locked():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
 async def test_failing_task_interval():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -140,12 +138,11 @@ async def test_failing_task_interval():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
 async def test_failing_task_interval_best_effort():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -169,12 +166,11 @@ async def test_failing_task_interval_best_effort():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
 async def test_dynamic_cron_timezones():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -208,15 +204,14 @@ async def test_dynamic_cron_timezones():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
 async def test_dynamic_batch_size():
     """We are able to process all thre instances of the dynamic task in one tick, even though batch size is set to one"""
 
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
-        redis_batch_size=1,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_batch_size=1,
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
@@ -242,12 +237,11 @@ async def test_dynamic_batch_size():
 
 @pytest.mark.asyncio
 @pytest.mark.integration
-@pytest.mark.redis
+@pytest.mark.postgres
 async def test_unregister_before_commit():
     app = Pyncette(
-        redis_url="redis://localhost",
-        redis_namespace=str(uuid4()),
-        repository_factory=redis_repository,
+        postgres_url="postgres://postgres@localhost/pyncette",
+        repository_factory=postgres_repository,
     )
 
     counter = MagicMock()
