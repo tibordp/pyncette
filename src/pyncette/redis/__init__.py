@@ -115,6 +115,8 @@ class RedisRepository(Repository):
         self, task: Task, response_data: List[bytes]
     ) -> Tuple[Task, Lease]:
         task_data = self._parse_response(response_data)
+        assert task_data.task_spec is not None
+
         return (task.instantiate_from_spec(task_data.task_spec), Lease(task_data))
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:

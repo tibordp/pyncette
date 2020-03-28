@@ -2,11 +2,11 @@
 
 import asyncio
 import datetime
+import random
 from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
-import random
 
 from pyncette import Context
 from pyncette import ExecutionMode
@@ -19,6 +19,7 @@ def random_table_name():
     return "pyncette_{}".format(
         "".join([chr(random.randint(ord("a"), ord("z"))) for _ in range(10)])
     )
+
 
 @pytest.mark.asyncio
 @pytest.mark.integration

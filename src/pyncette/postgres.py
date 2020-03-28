@@ -2,14 +2,14 @@ import contextlib
 import datetime
 import json
 import logging
-import uuid
 import re
+import uuid
+from contextlib import asynccontextmanager
 from typing import Any
 from typing import AsyncIterator
 from typing import Optional
 
 import asyncpg
-from contextlib import asynccontextmanager
 
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
@@ -58,7 +58,7 @@ class PostgresRepository(Repository):
                         execute_after timestamptz,
                         task_spec json
                     );
-                    CREATE INDEX IF NOT EXISTS due_tasks_{self._table_name} 
+                    CREATE INDEX IF NOT EXISTS due_tasks_{self._table_name}
                     ON {self._table_name} (parent_name, GREATEST(locked_until, execute_after));
                     """
                 )
@@ -103,7 +103,10 @@ class PostgresRepository(Repository):
                 ],
             )
             return QueryResponse(
-                tasks=[(concrete_task, locked_by) for concrete_task in concrete_tasks],
+                tasks=[
+                    (concrete_task, Lease(locked_by))
+                    for concrete_task in concrete_tasks
+                ],
                 # May result in an extra round-trip if there were exactly
                 # batch_size tasks available, but we deem this an acceptable
                 # tradeoff.
@@ -111,6 +114,8 @@ class PostgresRepository(Repository):
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+        assert task.parent_task is not None
+
         async with self.transaction() as connection:
             result = await connection.execute(
                 f"""
@@ -133,8 +138,13 @@ class PostgresRepository(Repository):
             await connection.execute("DELETE FROM tasks WHERE name = $1", task.name)
 
     async def _update_record(
-        self, connection, task, locked_until, locked_by, execute_after
-    ):
+        self,
+        connection: asyncpg.Connection,
+        task: Task,
+        locked_until: Optional[datetime.datetime],
+        locked_by: Optional[uuid.UUID],
+        execute_after: Optional[datetime.datetime],
+    ) -> None:
         result = await connection.execute(
             f"""
             INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
@@ -242,8 +252,8 @@ class PostgresRepository(Repository):
             result = await connection.execute(
                 f"""
                 UPDATE {self._table_name}
-                SET 
-                    locked_by = NULL, 
+                SET
+                    locked_by = NULL,
                     locked_until = NULL
                 WHERE name = $1 AND locked_by = $2
                 """,
