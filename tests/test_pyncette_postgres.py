@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 from uuid import uuid4
 
 import pytest
+import random
 
 from pyncette import Context
 from pyncette import ExecutionMode
@@ -14,6 +15,11 @@ from pyncette import Pyncette
 from pyncette.postgres import postgres_repository
 
 
+def random_table_name():
+    return "pyncette_{}".format(
+        "".join([chr(random.randint(ord("a"), ord("z"))) for _ in range(10)])
+    )
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 @pytest.mark.postgres
@@ -21,6 +27,7 @@ from pyncette.postgres import postgres_repository
 async def test_successful_task_interval():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -46,6 +53,7 @@ async def test_successful_task_interval():
 async def test_dynamic():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -85,6 +93,7 @@ async def test_dynamic():
 async def test_dynamic_locked():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -115,6 +124,7 @@ async def test_dynamic_locked():
 async def test_failing_task_interval():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -142,6 +152,7 @@ async def test_failing_task_interval():
 async def test_failing_task_interval_best_effort():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -170,6 +181,7 @@ async def test_failing_task_interval_best_effort():
 async def test_dynamic_cron_timezones():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -211,6 +223,7 @@ async def test_dynamic_batch_size():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
         postgres_batch_size=1,
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 
@@ -241,6 +254,7 @@ async def test_dynamic_batch_size():
 async def test_unregister_before_commit():
     app = Pyncette(
         postgres_url="postgres://postgres@localhost/pyncette",
+        postgres_table_name=random_table_name(),
         repository_factory=postgres_repository,
     )
 

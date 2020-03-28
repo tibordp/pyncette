@@ -3,19 +3,14 @@ import datetime
 import json
 import logging
 import uuid
-from dataclasses import dataclass
-from importlib.resources import read_text
+import re
 from typing import Any
 from typing import AsyncIterator
-from typing import Dict
-from typing import List
 from typing import Optional
-from typing import Tuple
 
 import asyncpg
 from contextlib import asynccontextmanager
 
-from pyncette.errors import PyncetteException
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -30,20 +25,32 @@ logger = logging.getLogger(__name__)
 class PostgresRepository(Repository):
     _pool: asyncpg.pool.Pool
     _batch_size: int
+    _table_name: str
 
     def __init__(
-        self, pool: asyncpg.pool.Pool, postgres_batch_size: int = 50, **kwargs: Any
+        self,
+        pool: asyncpg.pool.Pool,
+        postgres_batch_size: int = 50,
+        postgres_table_name: str = "tasks",
+        **kwargs: Any,
     ):
         self._pool = pool
         self._batch_size = postgres_batch_size
+        self._table_name = postgres_table_name
 
-    async def initialize(self):
+        if self._batch_size < 1:
+            raise ValueError("Batch size must be greater than 0")
+        if not re.match(r"^[a-z_]+$", self._table_name):
+            raise ValueError(
+                "Table name can only contain lower-case letters and underscores"
+            )
+
+    async def initialize(self) -> None:
         async with self._pool.acquire() as connection:
             async with connection.transaction():
                 await connection.execute(
-                    """
-                    DROP TABLE IF EXISTS tasks;
-                    CREATE TABLE IF NOT EXISTS tasks (
+                    f"""
+                    CREATE TABLE IF NOT EXISTS {self._table_name} (
                         name text PRIMARY KEY,
                         parent_name text,
                         locked_until timestamptz,
@@ -51,7 +58,8 @@ class PostgresRepository(Repository):
                         execute_after timestamptz,
                         task_spec json
                     );
-                    CREATE INDEX IF NOT EXISTS due_tasks ON tasks(parent_name, GREATEST(locked_until, execute_after));
+                    CREATE INDEX IF NOT EXISTS due_tasks_{self._table_name} 
+                    ON {self._table_name} (parent_name, GREATEST(locked_until, execute_after));
                     """
                 )
 
@@ -63,9 +71,12 @@ class PostgresRepository(Repository):
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         async with self.transaction() as connection:
-            rows = await connection.fetch(
-                """SELECT * FROM tasks 
-                WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) < $2 
+            locked_by = uuid.uuid4()
+            locked_until = utc_now + task.lease_duration
+
+            ready_tasks = await connection.fetch(
+                f"""SELECT * FROM {self._table_name}
+                WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) < $2
                 LIMIT $3
                 FOR UPDATE SKIP LOCKED
                 """,
@@ -73,54 +84,46 @@ class PostgresRepository(Repository):
                 utc_now,
                 self._batch_size,
             )
-            logger.debug(f"query_task returned {rows}")
-
-            new_locked_until = utc_now + task.lease_duration
-            tasks = []
-            for row in rows:
-                task_spec = json.loads(row["task_spec"])
-                concrete_task = task.instantiate(
-                    name=task_spec["name"],
-                    schedule=task_spec["schedule"],
-                    interval=datetime.timedelta(seconds=task_spec["interval"])
-                    if task_spec["interval"] is not None
-                    else None,
-                    timezone=task_spec["timezone"],
-                    **task_spec["extra_args"],
-                )
-                locked_by = uuid.uuid4()
-                await self._update_record(
-                    connection,
-                    concrete_task,
-                    new_locked_until,
-                    locked_by,
-                    row["execute_after"],
-                )
-                tasks.append((concrete_task, locked_by))
-
-            return QueryResponse(tasks=tasks, has_more=len(rows) == self._batch_size)
+            logger.debug(f"query_task returned {ready_tasks}")
+            concrete_tasks = [
+                task.instantiate_from_spec(json.loads(task_data["task_spec"]))
+                for task_data in ready_tasks
+            ]
+            await connection.executemany(
+                """
+                UPDATE tasks
+                SET
+                    locked_until = $2,
+                    locked_by = $3
+                WHERE name = $1
+                """,
+                [
+                    (concrete_task.name, locked_until, locked_by)
+                    for concrete_task in concrete_tasks
+                ],
+            )
+            return QueryResponse(
+                tasks=[(concrete_task, locked_by) for concrete_task in concrete_tasks],
+                # May result in an extra round-trip if there were exactly
+                # batch_size tasks available, but we deem this an acceptable
+                # tradeoff.
+                has_more=len(concrete_tasks) == self._batch_size,
+            )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self.transaction() as connection:
             result = await connection.execute(
-                """INSERT INTO tasks 
-                    (name, parent_name, task_spec, execute_after) 
-                    VALUES ($1, $2, $3, $4) 
-                    ON CONFLICT (name) DO UPDATE 
-                        SET task_spec = $3, execute_after = $4""",
+                f"""
+                INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (name) DO UPDATE
+                SET
+                    task_spec = $3,
+                    execute_after = $4
+                """,
                 task.name,
                 task.parent_task.name,
-                json.dumps(
-                    {
-                        "name": task.name,
-                        "schedule": task.schedule,
-                        "interval": task.interval.total_seconds()
-                        if task.interval is not None
-                        else None,
-                        "timezone": task.timezone,
-                        "extra_args": task.extra_args,
-                    }
-                ),
+                json.dumps(task.as_spec()),
                 task.get_next_execution(utc_now, None),
             )
             logger.debug(f"register_task returned {result}")
@@ -133,12 +136,15 @@ class PostgresRepository(Repository):
         self, connection, task, locked_until, locked_by, execute_after
     ):
         result = await connection.execute(
-            """INSERT INTO tasks 
-                (name, locked_until, locked_by, execute_after) 
-                VALUES ($1, $2, $3, $4) 
-                ON CONFLICT (name) DO UPDATE 
-                    SET locked_until = $2, 
-                    locked_by = $3, execute_after = $4""",
+            f"""
+            INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (name) DO UPDATE
+            SET
+                locked_until = $2,
+                locked_by = $3,
+                execute_after = $4
+            """,
             task.name,
             locked_until,
             locked_by,
@@ -150,22 +156,24 @@ class PostgresRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
         async with self.transaction() as connection:
-            row = await connection.fetchrow(
-                "SELECT * FROM tasks WHERE name = $1 FOR UPDATE", task.name
+            task_data = await connection.fetchrow(
+                f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
+                task.name,
             )
-            logger.debug(f"poll_task returned {row}")
+            logger.debug(f"poll_task returned {task_data}")
 
             update = False
-            if row is None:
+            if task_data is None:
                 execute_after = task.get_next_execution(utc_now, None)
                 locked_until = None
                 locked_by = None
                 update = True
             else:
-                execute_after = row["execute_after"]
-                locked_until = row["locked_until"]
-                locked_by = row["locked_by"]
+                execute_after = task_data["execute_after"]
+                locked_until = task_data["locked_until"]
+                locked_by = task_data["locked_by"]
 
+            # We need the original scheduled date for later
             scheduled_at = execute_after
 
             if (
@@ -205,16 +213,17 @@ class PostgresRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         async with self.transaction() as connection:
-            row = await connection.fetchrow(
-                "SELECT * FROM tasks WHERE name = $1 FOR UPDATE", task.name
+            task_data = await connection.fetchrow(
+                f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
+                task.name,
             )
-            logger.debug(f"commit_task returned {row}")
+            logger.debug(f"commit_task returned {task_data}")
 
-            if not row:
+            if not task_data:
                 logger.warning(f"Task {task} not found, skipping.")
                 return
 
-            if row["locked_by"] != lease:
+            if task_data["locked_by"] != lease:
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
 
@@ -223,7 +232,7 @@ class PostgresRepository(Repository):
                 task,
                 None,
                 None,
-                task.get_next_execution(utc_now, row["execute_after"]),
+                task.get_next_execution(utc_now, task_data["execute_after"]),
             )
 
     async def unlock_task(
@@ -231,9 +240,13 @@ class PostgresRepository(Repository):
     ) -> None:
         async with self.transaction() as connection:
             result = await connection.execute(
-                """UPDATE tasks 
-                    SET locked_by = NULL, locked_until = NULL 
-                    WHERE name = $1 AND locked_by = $2""",
+                f"""
+                UPDATE {self._table_name}
+                SET 
+                    locked_by = NULL, 
+                    locked_until = NULL
+                WHERE name = $1 AND locked_by = $2
+                """,
                 task.name,
                 lease,
             )

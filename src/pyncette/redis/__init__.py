@@ -115,36 +115,14 @@ class RedisRepository(Repository):
         self, task: Task, response_data: List[bytes]
     ) -> Tuple[Task, Lease]:
         task_data = self._parse_response(response_data)
-        task_spec = task_data.task_spec
-        assert task_spec is not None
-
-        task = task.instantiate(
-            name=task_spec["name"],
-            schedule=task_spec["schedule"],
-            interval=datetime.timedelta(seconds=task_spec["interval"])
-            if task_spec["interval"] is not None
-            else None,
-            **task_spec["extra_args"],
-            timezone=task_spec["timezone"],
-        )
-        return (task, Lease(task_data))
+        return (task.instantiate_from_spec(task_data.task_spec), Lease(task_data))
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""
         await self._redis_client.hset(
             f"pyncette:{self._namespace}:{task.name}",
             "task_spec",
-            json.dumps(
-                {
-                    "name": task.name,
-                    "schedule": task.schedule,
-                    "interval": task.interval.total_seconds()
-                    if task.interval is not None
-                    else None,
-                    "timezone": task.timezone,
-                    "extra_args": task.extra_args,
-                }
-            ),
+            json.dumps(task.as_spec()),
         )
         await self.poll_task(utc_now, task)
 
