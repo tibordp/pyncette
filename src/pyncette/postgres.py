@@ -90,8 +90,8 @@ class PostgresRepository(Repository):
                 for task_data in ready_tasks
             ]
             await connection.executemany(
-                """
-                UPDATE tasks
+                f"""
+                UPDATE {self._table_name}
                 SET
                     locked_until = $2,
                     locked_by = $3
