@@ -135,7 +135,9 @@ class PostgresRepository(Repository):
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self.transaction() as connection:
-            await connection.execute("DELETE FROM tasks WHERE name = $1", task.name)
+            await connection.execute(
+                f"DELETE FROM {self._table_name} WHERE name = $1", task.name
+            )
 
     async def _update_record(
         self,
