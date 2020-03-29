@@ -177,6 +177,10 @@ class PyncetteContext:
                 )
             elif poll_response.result == ResultType.LOCKED:
                 logger.debug(f"Not executing task {task}, because it is locked.")
+            else:
+                logger.warn(
+                    f"Unexpected poll response for {task}: {poll_response.result}"
+                )
 
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""

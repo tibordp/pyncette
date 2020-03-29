@@ -17,7 +17,6 @@ from typing import Tuple
 import aioredis
 
 from pyncette.errors import PyncetteException
-from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
 from pyncette.model import QueryResponse
@@ -101,19 +100,15 @@ class RedisRepository(Repository):
 
     _redis_client: aioredis.Redis
     _namespace: str
-    _poll_script: _LuaScript
-    _commit_script: _LuaScript
+    _manage_script: _LuaScript
     _query_script: _LuaScript
-    _unregister_script: _LuaScript
 
     def __init__(self, redis_client: aioredis.Redis, **kwargs: Any):
         self._redis_client = redis_client
         self._namespace = kwargs.get("redis_namespace", "")
         self._batch_size = kwargs.get("batch_size", 100)
-        self._poll_script = _LuaScript("poll.lua")
-        self._commit_script = _LuaScript("commit.lua")
         self._query_script = _LuaScript("query.lua")
-        self._unregister_script = _LuaScript("unregister.lua")
+        self._manage_script = _LuaScript("manage.lua")
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         new_locked_until = utc_now + task.lease_duration
@@ -141,21 +136,28 @@ class RedisRepository(Repository):
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""
-        await self._redis_client.hset(
-            f"pyncette:{self._namespace}:{task.name}",
-            "task_spec",
-            json.dumps(task.as_spec()),
-        )
-        await self.poll_task(utc_now, task)
-
-    async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        response = await self._unregister_script.execute(
+        response = await self._manage_script.execute(
             self._redis_client,
             keys=[
                 f"pyncette:{self._namespace}:{task.name}",
                 f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
             ],
-            args=[utc_now.isoformat(),],
+            args=[
+                "REGISTER",
+                task.get_next_execution(utc_now, None).isoformat(),
+                json.dumps(task.as_spec()),
+            ],
+        )
+        logger.debug(f"register_lua script returned {response}")
+
+    async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
+        response = await self._manage_script.execute(
+            self._redis_client,
+            keys=[
+                f"pyncette:{self._namespace}:{task.name}",
+                f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
+            ],
+            args=["UNREGISTER", utc_now.isoformat()],
         )
         logger.debug(f"unregister_lua script returned {response}")
 
@@ -184,32 +186,32 @@ class RedisRepository(Repository):
             )
         else:
             # By default we assume that the task is brand new
-            version, execute_after, locked_by = 0, None, str(uuid.uuid4())
+            version, execute_after, locked_by = (
+                0,
+                None,
+                str(uuid.uuid4()),
+            )
 
         new_locked_until = utc_now + task.lease_duration
         for _ in range(5):
             next_execution = task.get_next_execution(utc_now, execute_after)
             response = await self._poll_record(
-                task.execution_mode,
-                task,
-                utc_now,
-                version,
-                next_execution,
-                new_locked_until,
-                locked_by,
+                task, utc_now, version, next_execution, new_locked_until, locked_by,
             )
             task._last_lease = response  # type: ignore
 
-            if response.result != ResultType.LEASE_MISMATCH:
+            if response.result == ResultType.LEASE_MISMATCH:
+                logger.debug(f"Lease mismatch, retrying.")
+                execute_after = response.execute_after
+                version = response.version
+            elif response.result == ResultType.MISSING:
+                raise PyncetteException("Task not found")
+            else:
                 return PollResponse(
                     result=response.result,
                     scheduled_at=execute_after,
                     lease=Lease(response),
                 )
-            else:
-                logger.debug(f"Lease mismatch, retrying.")
-                execute_after = response.execute_after
-                version = response.version
 
         raise PyncetteException(
             "Unable to acquire the lock on the task due to contention"
@@ -244,7 +246,6 @@ class RedisRepository(Repository):
 
     async def _poll_record(
         self,
-        mode: ExecutionMode,
         task: Task,
         utc_now: datetime.datetime,
         version: int,
@@ -252,14 +253,16 @@ class RedisRepository(Repository):
         locked_until: datetime.datetime,
         locked_by: Optional[str],
     ) -> _ScriptResponse:
-        response = await self._poll_script.execute(
+        response = await self._manage_script.execute(
             self._redis_client,
             keys=[
                 f"pyncette:{self._namespace}:{task.name}",
                 f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
             ],
             args=[
-                mode.name,
+                "POLL",
+                task.execution_mode.name,
+                "REGULAR" if task.parent_task is None else "DYNAMIC",
                 utc_now.isoformat(),
                 version,
                 execute_after.isoformat(),
@@ -277,13 +280,14 @@ class RedisRepository(Repository):
         execute_after: Optional[datetime.datetime],
         locked_by: str,
     ) -> _ScriptResponse:
-        response = await self._commit_script.execute(
+        response = await self._manage_script.execute(
             self._redis_client,
             keys=[
                 f"pyncette:{self._namespace}:{task.name}",
                 f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
             ],
             args=[
+                "COMMIT",
                 version,
                 locked_by,
                 *([] if execute_after is None else [execute_after.isoformat()]),
@@ -294,10 +298,8 @@ class RedisRepository(Repository):
 
     async def register_scripts(self) -> None:
         """Registers the Lua scripts used by the implementation ahead of time"""
-        await self._poll_script.register(self._redis_client)
-        await self._commit_script.register(self._redis_client)
         await self._query_script.register(self._redis_client)
-        await self._unregister_script.register(self._redis_client)
+        await self._manage_script.register(self._redis_client)
 
 
 @contextlib.asynccontextmanager

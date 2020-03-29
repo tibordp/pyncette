@@ -11,6 +11,7 @@ from typing import Optional
 
 import asyncpg
 
+from pyncette.errors import PyncetteException
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -72,7 +73,7 @@ class PostgresRepository(Repository):
 
             ready_tasks = await connection.fetch(
                 f"""SELECT * FROM {self._table_name}
-                WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) < $2
+                WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) <= $2
                 LIMIT $3
                 FOR UPDATE SKIP LOCKED
                 """,
@@ -120,7 +121,9 @@ class PostgresRepository(Repository):
                 ON CONFLICT (name) DO UPDATE
                 SET
                     task_spec = $3,
-                    execute_after = $4
+                    execute_after = $4,
+                    locked_by = NULL,
+                    locked_until = NULL
                 """,
                 task.name,
                 task.parent_task.name,
@@ -172,6 +175,12 @@ class PostgresRepository(Repository):
 
             update = False
             if task_data is None:
+                # Regular (non-dynamic) tasks will be implicitly created on first poll,
+                # but dynamic task instances must be explicitely created to prevent spurious
+                # poll from re-creating them after being deleted.
+                if task.parent_task is not None:
+                    raise PyncetteException("Task not found")
+
                 execute_after = task.get_next_execution(utc_now, None)
                 locked_until = None
                 locked_by = None

@@ -16,6 +16,7 @@ from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
+from pyncette.errors import PyncetteException
 
 
 @pytest.mark.asyncio
@@ -532,7 +533,7 @@ async def test_middlewares(timemachine, create_args):
 
 @pytest.mark.asyncio
 async def test_dynamic_successful_task_interval(timemachine, create_args):
-    app = Pyncette()
+    app = Pyncette(**create_args(timemachine))
 
     counter = MagicMock()
 
@@ -558,12 +559,12 @@ async def test_dynamic_successful_task_interval(timemachine, create_args):
         await task
         await timemachine.close()
 
-    assert counter.execute.call_count == 12
+    assert counter.execute.call_count == 15
 
 
 @pytest.mark.asyncio
 async def test_dynamic_successful_task_interval_extra_args(timemachine, create_args):
-    app = Pyncette()
+    app = Pyncette(**create_args(timemachine))
 
     counter = MagicMock()
 
@@ -602,7 +603,7 @@ async def test_dynamic_successful_task_interval_extra_args(timemachine, create_a
 
 @pytest.mark.asyncio
 async def test_dynamic_execute_once(timemachine, create_args):
-    app = Pyncette()
+    app = Pyncette(**create_args(timemachine))
 
     counter = MagicMock()
 
@@ -620,3 +621,104 @@ async def test_dynamic_execute_once(timemachine, create_args):
         await timemachine.close()
 
     assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_dynamic_register_again(timemachine, create_args):
+    app = Pyncette(**create_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1))
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=2))
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.close()
+
+    assert counter.execute.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_dynamic_poll_after_unregister(timemachine, create_args):
+    app = Pyncette(**create_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task_instance = await ctx.schedule_task(
+            hello, "1", interval=datetime.timedelta(seconds=1)
+        )
+        await ctx.unschedule_task(hello, "1")
+
+        with pytest.raises(PyncetteException, match="not found"):
+            await ctx._repository.poll_task(timemachine.utcnow(), task_instance)
+
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=60))
+        ctx.shutdown()
+        await task
+        await timemachine.close()
+
+    assert counter.execute.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_coordination(timemachine, create_args):
+    if create_args(timemachine) == {}:
+        pytest.skip("This test requires persistence.")
+
+    app = Pyncette(**create_args(timemachine))
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def successful_task(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx1, app.create() as ctx2:
+        task1 = asyncio.create_task(ctx1.run())
+        task2 = asyncio.create_task(ctx2.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx1.shutdown()
+        ctx2.shutdown()
+        await asyncio.gather(task1, task2)
+        await timemachine.close()
+
+    assert counter.execute.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_dynamic_coordination(timemachine, create_args):
+    if create_args(timemachine) == {}:
+        pytest.skip("This test requires persistence.")
+
+    app = Pyncette(**create_args(timemachine))
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx1, app.create() as ctx2:
+        task1 = asyncio.create_task(ctx1.run())
+        task2 = asyncio.create_task(ctx2.run())
+        await ctx1.schedule_task(hello, "1", interval=datetime.timedelta(seconds=2))
+        await timemachine.step(datetime.timedelta(seconds=10))
+        await ctx2.unschedule_task(hello, "1")
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx1.shutdown()
+        ctx2.shutdown()
+        await asyncio.gather(task1, task2)
+        await timemachine.close()
+
+    assert counter.execute.call_count == 5

@@ -52,24 +52,22 @@ def sqlite_persisted(timemachine):
     }
 
 
-def sqlite(timemachine):
-    return {
-        "repository_factory": sqlite_repository,
-    }
+def default(timemachine):
+    return {}
 
 
 def pytest_addoption(parser):
     parser.addoption(
         "--repository",
         action="append",
-        default=["sqlite"],
+        default=["default"],
         help="list of repositories to test with",
     )
 
 
 def pytest_generate_tests(metafunc):
     if "create_args" in metafunc.fixturenames:
-        all_repositories = [postgres, redis, sqlite, sqlite_persisted]
+        all_repositories = [postgres, redis, default, sqlite_persisted]
         metafunc.parametrize(
             "create_args",
             [

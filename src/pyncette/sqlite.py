@@ -12,6 +12,7 @@ from typing import cast
 
 import dateutil.tz
 
+from pyncette.errors import PyncetteException
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -80,7 +81,7 @@ class SqliteRepository(Repository):
 
             ready_tasks = self._connection.execute(
                 f"""SELECT * FROM {self._table_name}
-                WHERE parent_name = $1 AND MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) < $2
+                WHERE parent_name = $1 AND MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) <= $2
                 LIMIT $3
                 """,
                 (task.name, _to_timestamp(utc_now), self._batch_size),
@@ -114,22 +115,46 @@ class SqliteRepository(Repository):
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         assert task.parent_task is not None
-        self._connection.execute(
-            f"""
-            INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
-            VALUES (:name, :parent_name, :task_spec, :execute_after)
-            ON CONFLICT (name) DO UPDATE
-            SET
-                task_spec = :task_spec,
-                execute_after = :execute_after
-            """,
-            {
-                "name": task.name,
-                "parent_name": task.parent_task.name,
-                "task_spec": json.dumps(task.as_spec()),
-                "execute_after": _to_timestamp(task.get_next_execution(utc_now, None)),
-            },
-        )
+        with self._connection:
+            task_data = self._connection.execute(
+                f"SELECT 1 FROM {self._table_name} WHERE name = ?", (task.name,),
+            ).fetchone()
+
+            if task_data:
+                self._connection.execute(
+                    f"""
+                    UPDATE {self._table_name}
+                    SET
+                        task_spec = :task_spec,
+                        execute_after = :execute_after,
+                        locked_until = NULL,
+                        locked_by = NULL
+                    WHERE
+                        name = :name
+                    """,
+                    {
+                        "name": task.name,
+                        "task_spec": json.dumps(task.as_spec()),
+                        "execute_after": _to_timestamp(
+                            task.get_next_execution(utc_now, None)
+                        ),
+                    },
+                )
+            else:
+                self._connection.execute(
+                    f"""
+                    INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
+                    VALUES (:name, :parent_name, :task_spec, :execute_after)
+                    """,
+                    {
+                        "name": task.name,
+                        "parent_name": task.parent_task.name,
+                        "task_spec": json.dumps(task.as_spec()),
+                        "execute_after": _to_timestamp(
+                            task.get_next_execution(utc_now, None)
+                        ),
+                    },
+                )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         with self._connection:
@@ -146,6 +171,12 @@ class SqliteRepository(Repository):
             ).fetchone()
 
             if not task_data:
+                # Regular (non-dynamic) tasks will be implicitly created on first poll,
+                # but dynamic task instances must be explicitely created to prevent spurious
+                # poll from re-creating them after being deleted.
+                if task.parent_task is not None:
+                    raise PyncetteException("Task not found")
+
                 locked_until = None
                 locked_by = None
                 execute_after = task.get_next_execution(utc_now, None)
