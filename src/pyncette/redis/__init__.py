@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import datetime
 import json
@@ -67,6 +69,32 @@ class _ScriptResponse:
     task_spec: Optional[Dict[str, Any]]
     locked_by: Optional[str]
 
+    @classmethod
+    def from_response(cls, response: List[bytes]) -> _ScriptResponse:
+        return cls(
+            result=ResultType[response[0].decode()],
+            version=int(response[1] or 0),
+            execute_after=None
+            if len(response) <= 2 or response[2] is None
+            else datetime.datetime.fromisoformat(response[2].decode()),
+            locked_until=None
+            if len(response) <= 3 or response[3] is None
+            else datetime.datetime.fromisoformat(response[3].decode()),
+            locked_by=None
+            if len(response) <= 4 or response[4] is None
+            else response[4].decode(),
+            task_spec=None
+            if len(response) <= 5 or response[5] is None
+            else json.loads(response[5]),
+        )
+
+
+def _create_dynamic_task(task: Task, response_data: List[bytes]) -> Tuple[Task, Lease]:
+    task_data = _ScriptResponse.from_response(response_data)
+    assert task_data.task_spec is not None
+
+    return (task.instantiate_from_spec(task_data.task_spec), Lease(task_data))
+
 
 class RedisRepository(Repository):
     """Redis-backed store for Pyncete task execution data"""
@@ -81,7 +109,7 @@ class RedisRepository(Repository):
     def __init__(self, redis_client: aioredis.Redis, **kwargs: Any):
         self._redis_client = redis_client
         self._namespace = kwargs.get("redis_namespace", "")
-        self._batch_size = kwargs.get("redis_batch_size", 100)
+        self._batch_size = kwargs.get("batch_size", 100)
         self._poll_script = _LuaScript("poll.lua")
         self._commit_script = _LuaScript("commit.lua")
         self._query_script = _LuaScript("query.lua")
@@ -105,19 +133,11 @@ class RedisRepository(Repository):
 
         return QueryResponse(
             tasks=[
-                self._create_dynamic_task(task, response_data)
+                _create_dynamic_task(task, response_data)
                 for response_data in response[1:]
             ],
             has_more=response[0] == b"HAS_MORE",
         )
-
-    def _create_dynamic_task(
-        self, task: Task, response_data: List[bytes]
-    ) -> Tuple[Task, Lease]:
-        task_data = self._parse_response(response_data)
-        assert task_data.task_spec is not None
-
-        return (task.instantiate_from_spec(task_data.task_spec), Lease(task_data))
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""
@@ -248,7 +268,7 @@ class RedisRepository(Repository):
             ],
         )
         logger.debug(f"poll_lua script returned {response}")
-        return self._parse_response(response)
+        return _ScriptResponse.from_response(response)
 
     async def _commit_record(
         self,
@@ -270,7 +290,7 @@ class RedisRepository(Repository):
             ],
         )
         logger.debug(f"commit_lua script returned {response}")
-        return self._parse_response(response)
+        return _ScriptResponse.from_response(response)
 
     async def register_scripts(self) -> None:
         """Registers the Lua scripts used by the implementation ahead of time"""
@@ -279,29 +299,13 @@ class RedisRepository(Repository):
         await self._query_script.register(self._redis_client)
         await self._unregister_script.register(self._redis_client)
 
-    def _parse_response(self, response: List[bytes]) -> _ScriptResponse:
-        return _ScriptResponse(
-            result=ResultType[response[0].decode()],
-            version=int(response[1] or 0),
-            execute_after=None
-            if len(response) <= 2 or response[2] is None
-            else datetime.datetime.fromisoformat(response[2].decode()),
-            locked_until=None
-            if len(response) <= 3 or response[3] is None
-            else datetime.datetime.fromisoformat(response[3].decode()),
-            locked_by=None
-            if len(response) <= 4 or response[4] is None
-            else response[4].decode(),
-            task_spec=None
-            if len(response) <= 5 or response[5] is None
-            else json.loads(response[5]),
-        )
-
 
 @contextlib.asynccontextmanager
 async def redis_repository(**kwargs: Any) -> AsyncIterator[RedisRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
-    redis_pool = await aioredis.create_redis_pool(kwargs["redis_url"])
+    redis_pool = await aioredis.create_redis_pool(
+        kwargs["redis_url"], timeout=kwargs.get("redis_timeout")
+    )
     try:
         repository = RedisRepository(redis_pool, **kwargs)
         await repository.register_scripts()

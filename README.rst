@@ -54,9 +54,17 @@ A reliable distributed cron with pluggable storage backends
 Installation
 ============
 
+Minimal installation (just SQLite persistence):
+
 ::
 
-    pip install pyncette[redis] 
+    pip install pyncette
+
+Full installation (Redis and PostgreSQL persistence and Prometheus metrics exporter):
+
+::
+
+    pip install pyncette[redis,postgres,prometheus]
 
 You can also install the in-development version with::
 
@@ -106,6 +114,8 @@ Persistent distributed cron using Redis (coordinates execution with parallel ins
 
 Development
 ===========
+
+To run integration tests you will need Redis and PostgreSQL Server running locally.
 
 To run the all tests run::
 

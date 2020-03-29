@@ -28,15 +28,11 @@ class PostgresRepository(Repository):
     _table_name: str
 
     def __init__(
-        self,
-        pool: asyncpg.pool.Pool,
-        postgres_batch_size: int = 50,
-        postgres_table_name: str = "tasks",
-        **kwargs: Any,
+        self, pool: asyncpg.pool.Pool, **kwargs: Any,
     ):
         self._pool = pool
-        self._batch_size = postgres_batch_size
-        self._table_name = postgres_table_name
+        self._table_name = kwargs.get("postgres_table_name", "pyncette_tasks")
+        self._batch_size = kwargs.get("batch_size", 100)
 
         if self._batch_size < 1:
             raise ValueError("Batch size must be greater than 0")
@@ -267,7 +263,7 @@ class PostgresRepository(Repository):
 
 @contextlib.asynccontextmanager
 async def postgres_repository(**kwargs: Any) -> AsyncIterator[PostgresRepository]:
-    """Factory context manager for Redis repository that initializes the connection to Redis"""
+    """Factory context manager for Redis repository that initializes the connection to Postgres"""
     postgres_pool = await asyncpg.create_pool(kwargs["postgres_url"])
     try:
         repository = PostgresRepository(postgres_pool, **kwargs)
