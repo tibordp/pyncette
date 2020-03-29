@@ -137,31 +137,6 @@ class SqliteRepository(Repository):
                 f"DELETE FROM {self._table_name} WHERE name = $1", (task.name,)
             )
 
-    def _update_record(
-        self,
-        task: Task,
-        locked_until: Optional[datetime.datetime],
-        locked_by: Optional[uuid.UUID],
-        execute_after: Optional[datetime.datetime],
-    ) -> None:
-        self._connection.execute(
-            f"""
-            INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
-            VALUES (:name, :locked_until, :locked_by, :execute_after)
-            ON CONFLICT (name) DO UPDATE
-            SET
-                locked_until = :locked_until,
-                locked_by = :locked_by,
-                execute_after = :execute_after
-            """,
-            {
-                "name": task.name,
-                "locked_until": _to_timestamp(locked_until),
-                "locked_by": str(locked_by),
-                "execute_after": _to_timestamp(execute_after),
-            },
-        )
-
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
@@ -170,12 +145,17 @@ class SqliteRepository(Repository):
                 f"SELECT * FROM {self._table_name} WHERE name = ?", (task.name,),
             ).fetchone()
 
-            update = False
             if not task_data:
-                execute_after = task.get_next_execution(utc_now, None)
                 locked_until = None
                 locked_by = None
-                update = True
+                execute_after = task.get_next_execution(utc_now, None)
+                self._connection.execute(
+                    f"""
+                    INSERT INTO {self._table_name} (name, execute_after)
+                    VALUES (:name, :locked_until)
+                    """,
+                    (task.name, _to_timestamp(execute_after)),
+                )
             else:
                 execute_after = cast(
                     datetime.datetime, _from_timestamp(task_data["execute_after"])
@@ -198,7 +178,9 @@ class SqliteRepository(Repository):
             ):
                 execute_after = task.get_next_execution(utc_now, execute_after)
                 result = ResultType.READY
-                update = True
+                self._update_record(
+                    task, locked_until, locked_by, execute_after,
+                )
             elif (
                 execute_after <= utc_now
                 and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
@@ -206,14 +188,11 @@ class SqliteRepository(Repository):
                 locked_until = utc_now + task.lease_duration
                 locked_by = uuid.uuid4()
                 result = ResultType.READY
-                update = True
-            else:
-                result = ResultType.PENDING
-
-            if update:
                 self._update_record(
                     task, locked_until, locked_by, execute_after,
                 )
+            else:
+                result = ResultType.PENDING
 
             return PollResponse(
                 result=result, scheduled_at=scheduled_at, lease=locked_by
@@ -258,6 +237,30 @@ class SqliteRepository(Repository):
             WHERE name = ? AND locked_by = ?
             """,
             (task.name, str(lease)),
+        )
+
+    def _update_record(
+        self,
+        task: Task,
+        locked_until: Optional[datetime.datetime],
+        locked_by: Optional[uuid.UUID],
+        execute_after: Optional[datetime.datetime],
+    ) -> None:
+        self._connection.execute(
+            f"""
+            UPDATE {self._table_name}
+            SET
+                locked_until = :locked_until,
+                locked_by = :locked_by,
+                execute_after = :execute_after
+            WHERE name = :name
+            """,
+            {
+                "name": task.name,
+                "locked_until": _to_timestamp(locked_until),
+                "locked_by": str(locked_by),
+                "execute_after": _to_timestamp(execute_after),
+            },
         )
 
 
