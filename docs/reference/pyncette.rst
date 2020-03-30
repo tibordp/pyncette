@@ -8,12 +8,15 @@ Submodules
 
    pyncette.errors
    pyncette.model
+   pyncette.postgres
+   pyncette.prometheus
    pyncette.pyncette
    pyncette.redis
    pyncette.repository
    pyncette.scheduler
+   pyncette.sqlite
    pyncette.task
-   pyncette.prometheus
+   
 
 Module contents
 ---------------

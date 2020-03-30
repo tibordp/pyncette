@@ -11,7 +11,6 @@ import pytest
 
 import pyncette
 
-actual_sleep = asyncio.sleep
 logger = logging.getLogger(__name__)
 
 
@@ -28,6 +27,9 @@ class ScheduledTask:
         return self.execute_at.__eq__(other.execute_at)
 
 
+SPIN_ITERATIONS = 10
+
+
 class TimeMachine:
     """Utility class that allows us to mock real time in a way that plays well with asyncio without implementing a custom event loop."""
 
@@ -35,10 +37,15 @@ class TimeMachine:
         self.callbacks = []
         self.io_tasks = []
         self.base_time = base_time
-        self.closed = False
         self.offset = datetime.timedelta(seconds=0)
 
     def decorate_io(self, obj):
+        """
+        Decorates the class or function in a way the way that Timemachine actually waits for I/O
+        operations to complete before proceeding with time shifting. From the application's point
+        of view all decorated I/O operations happen instantaneously.
+        """
+
         def wrapper(func):
             async def wrapped(*args, **kwargs):
                 future = asyncio.Future()
@@ -53,35 +60,29 @@ class TimeMachine:
         if inspect.iscoroutinefunction(obj):
             return wrapper(obj)
         else:
-            result = type("_Wrapper", (), {})
             for name, fn in inspect.getmembers(obj):
                 if inspect.iscoroutinefunction(fn):
-                    setattr(result, name, wrapper(fn))
-                elif inspect.isfunction(fn):
-                    setattr(result, name, fn)
-            return result
+                    setattr(obj, name, wrapper(fn))
+            return obj
 
-    def sleep(self, seconds):
+    def sleep(self, delay, *args, **kwargs):
         future = asyncio.Future()
-        if self.closed:
-            future.set_result(None)
-            return future
-
         heapq.heappush(
             self.callbacks,
-            ScheduledTask(self.offset + datetime.timedelta(seconds=seconds), future),
+            ScheduledTask(self.offset + datetime.timedelta(seconds=delay), future),
         )
+        future.add_done_callback(self._remove_cancelled_sleep)
         logger.info(
-            f"Registering sleep for {seconds}s (resume at T+{self.offset + datetime.timedelta(seconds=seconds)})"
+            f"Registering sleep {id(future)} for {delay}s (resume at T+{self.offset + datetime.timedelta(seconds=delay)})"
         )
         return future
 
-    def wait_for(self, awaitable, timeout):
+    def wait_for(self, fut, timeout, *args, **kwargs):
         if timeout is None:
-            return awaitable
+            return fut
 
         future = asyncio.Future()
-        awaitable = asyncio.ensure_future(awaitable)
+        fut = asyncio.ensure_future(fut)
         wait_handle = self.sleep(timeout)
 
         def _on_timeout(f):
@@ -100,7 +101,7 @@ class TimeMachine:
                 pass
 
         wait_handle.add_done_callback(_on_timeout)
-        awaitable.add_done_callback(_on_completion)
+        fut.add_done_callback(_on_completion)
         return future
 
     def perf_counter(self):
@@ -109,8 +110,56 @@ class TimeMachine:
     def utcnow(self):
         return self.base_time + self.offset
 
+    async def unwind(self):
+        """Jumps to "infinity". I.e. continues executing until no more sleeps appear"""
+        await self._spin()
+        while len(self.callbacks) > 0:
+            task = heapq.heappop(self.callbacks)
+            self._update_offset(task.execute_at)
+            try:
+                task.future.set_result(None)
+            except asyncio.InvalidStateError:
+                pass
+            await self._spin()
+
+    async def step(self, delta=None):
+        if delta is None:
+            await self._spin()
+        else:
+            await self.jump_to(self.offset + delta)
+
+    async def jump_to(self, offset):
+        if offset < self.offset:
+            raise ValueError("Cannot go back in time (yet)!")
+
+        await self._spin()
+        while len(self.callbacks) > 0:
+            if self.callbacks[0].execute_at > offset:
+                break
+            task = heapq.heappop(self.callbacks)
+            self._update_offset(task.execute_at)
+            try:
+                task.future.set_result(None)
+            except asyncio.InvalidStateError:
+                pass
+            await self._spin()
+        self._update_offset(offset)
+
+    def _remove_cancelled_sleep(self, fut):
+        if fut.cancelled:
+            try:
+                self.callbacks = [
+                    callback
+                    for callback in self.callbacks
+                    if callback.future is not fut
+                ]
+                heapq.heapify(self.callbacks)
+                logger.info(f"Removed cancelled sleep {id(fut)}")
+            except ValueError:
+                pass
+
     async def _spin(self):
-        for _ in range(10):
+        for _ in range(SPIN_ITERATIONS):
             # First we wait for any pending I/O futures to complete
             if self.io_tasks:
                 io_tasks = self.io_tasks
@@ -123,35 +172,10 @@ class TimeMachine:
             loop.call_soon(future.set_result, None)
             await future
 
-    async def close(self):
-        await self._spin()
-        self._closed = True
-
-        while len(self.callbacks) > 0:
-            task = heapq.heappop(self.callbacks)
-            try:
-                task.future.set_result(None)
-            except asyncio.InvalidStateError:
-                pass
-            await self._spin()
-
-    async def step(self, delta):
-        await self._spin()
-        initial_offset = self.offset
-        while len(self.callbacks) > 0:
-            if self.callbacks[0].execute_at > initial_offset + delta:
-                break
-            task = heapq.heappop(self.callbacks)
-            self.offset = task.execute_at
-            logger.info(f"Jumped to T+{task.execute_at.total_seconds()}s")
-            try:
-                task.future.set_result(None)
-            except asyncio.InvalidStateError:
-                pass
-            await self._spin()
-
-        self.offset = initial_offset + delta
-        logger.info(f"Jumped to T+{(initial_offset + delta).total_seconds()}s")
+    def _update_offset(self, new_offset):
+        if self.offset != new_offset:
+            self.offset = new_offset
+            logger.info(f"Jumped to T+{new_offset.total_seconds()}s")
 
 
 @pytest.fixture

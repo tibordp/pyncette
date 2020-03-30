@@ -20,8 +20,8 @@ from pyncette.errors import PyncetteException
 
 
 @pytest.mark.asyncio
-async def test_successful_task_interval(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_successful_task_interval(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
     counter = MagicMock()
 
     @app.task(interval=datetime.timedelta(seconds=2))
@@ -33,15 +33,15 @@ async def test_successful_task_interval(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_successful_task_cronspec(timemachine, create_args):
+async def test_successful_task_cronspec(timemachine, backend):
     app = Pyncette(
-        **create_args(timemachine), poll_interval=datetime.timedelta(seconds=30)
+        **backend.get_args(timemachine), poll_interval=datetime.timedelta(seconds=30)
     )
 
     counter = MagicMock()
@@ -55,14 +55,14 @@ async def test_successful_task_cronspec(timemachine, create_args):
         await timemachine.step(datetime.timedelta(minutes=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 10
 
 
 @pytest.mark.asyncio
-async def test_failed_task_retried_on_every_tick_if_unlock(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_failed_task_retried_on_every_tick_if_unlock(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -76,16 +76,16 @@ async def test_failed_task_retried_on_every_tick_if_unlock(timemachine, create_a
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 9
 
 
 @pytest.mark.asyncio
 async def test_failed_task_retried_after_lease_over_if_failure_mode_none(
-    timemachine, create_args
+    timemachine, backend
 ):
-    app = Pyncette(**create_args(timemachine))
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -102,14 +102,14 @@ async def test_failed_task_retried_after_lease_over_if_failure_mode_none(
         await timemachine.step(datetime.timedelta(seconds=20))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 4
 
 
 @pytest.mark.asyncio
-async def test_failed_task_not_retried_if_commit_on_failure(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_failed_task_not_retried_if_commit_on_failure(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -123,14 +123,14 @@ async def test_failed_task_not_retried_if_commit_on_failure(timemachine, create_
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_failed_task_not_retried_if_best_effort(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_failed_task_not_retried_if_best_effort(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -147,14 +147,14 @@ async def test_failed_task_not_retried_if_best_effort(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_locked_while_executing(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_locked_while_executing(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -168,14 +168,14 @@ async def test_locked_while_executing(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 2
 
 
 @pytest.mark.asyncio
-async def test_lease_is_taken_over_if_expired(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_lease_is_taken_over_if_expired(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -192,16 +192,14 @@ async def test_lease_is_taken_over_if_expired(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_not_locked_while_executing_if_best_effort_is_used(
-    timemachine, create_args
-):
-    app = Pyncette(**create_args(timemachine))
+async def test_not_locked_while_executing_if_best_effort_is_used(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -218,14 +216,14 @@ async def test_not_locked_while_executing_if_best_effort_is_used(
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_catches_up_with_stale_executions(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_catches_up_with_stale_executions(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -241,14 +239,14 @@ async def test_catches_up_with_stale_executions(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=20))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 10
 
 
 @pytest.mark.asyncio
-async def test_context_scheduled_at(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_context_scheduled_at(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -261,7 +259,7 @@ async def test_context_scheduled_at(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.offset.call_count == 5
     counter.offset.assert_any_call(
@@ -283,9 +281,9 @@ async def test_context_scheduled_at(timemachine, create_args):
 
 @pytest.mark.asyncio
 async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
-    timemachine, create_args
+    timemachine, backend
 ):
-    app = Pyncette(**create_args(timemachine))
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -305,14 +303,14 @@ async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
         await timemachine.step(datetime.timedelta(seconds=20))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 7
 
 
 @pytest.mark.asyncio
-async def test_fixture(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_fixture(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -331,7 +329,7 @@ async def test_fixture(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.entered.call_count == 1
     assert counter.executed.call_count == 5
@@ -339,8 +337,8 @@ async def test_fixture(timemachine, create_args):
 
 
 @pytest.mark.asyncio
-async def test_extra_args(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_extra_args(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -354,15 +352,15 @@ async def test_extra_args(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.foo == "bar"
     assert counter.quux == 123
 
 
 @pytest.mark.asyncio
-async def test_multi_task(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_multi_task(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -376,15 +374,15 @@ async def test_multi_task(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 15
 
 
 @pytest.mark.asyncio
-async def test_timezone_support(timemachine, create_args):
+async def test_timezone_support(timemachine, backend):
     app = Pyncette(
-        **create_args(timemachine), poll_interval=datetime.timedelta(minutes=10)
+        **backend.get_args(timemachine), poll_interval=datetime.timedelta(minutes=10)
     )
 
     counter = MagicMock()
@@ -420,12 +418,12 @@ async def test_timezone_support(timemachine, create_args):
 
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
 
 @pytest.mark.asyncio
-async def test_concurrency_limit(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine), concurrency_limit=1)
+async def test_concurrency_limit(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine), concurrency_limit=1)
 
     counter = MagicMock()
     release = asyncio.Event()
@@ -445,16 +443,16 @@ async def test_concurrency_limit(timemachine, create_args):
         ctx.shutdown()
         release.set()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 2  # One extra call after
 
 
 @pytest.mark.asyncio
 async def test_cancelling_run_should_cancel_executing_tasks(
-    timemachine, create_args,
+    timemachine, backend,
 ):
-    app = Pyncette(**create_args(timemachine), concurrency_limit=1)
+    app = Pyncette(**backend.get_args(timemachine), concurrency_limit=1)
 
     counter = MagicMock()
     release = asyncio.Event()
@@ -478,8 +476,8 @@ async def test_cancelling_run_should_cancel_executing_tasks(
 
 
 @pytest.mark.asyncio
-async def test_middlewares(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_middlewares(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
     counter = MagicMock()
 
     @app.task(interval=datetime.timedelta(seconds=2))
@@ -515,7 +513,7 @@ async def test_middlewares(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=2))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.task1.mock_calls == [
         call.enter(1),
@@ -532,8 +530,8 @@ async def test_middlewares(timemachine, create_args):
 
 
 @pytest.mark.asyncio
-async def test_dynamic_successful_task_interval(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_dynamic_successful_task_interval(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -557,14 +555,14 @@ async def test_dynamic_successful_task_interval(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 15
 
 
 @pytest.mark.asyncio
-async def test_dynamic_successful_task_interval_extra_args(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_dynamic_successful_task_interval_extra_args(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -594,7 +592,7 @@ async def test_dynamic_successful_task_interval_extra_args(timemachine, create_a
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     counter.execute.assert_any_call("bill")
     counter.execute.assert_any_call("steve")
@@ -602,8 +600,8 @@ async def test_dynamic_successful_task_interval_extra_args(timemachine, create_a
 
 
 @pytest.mark.asyncio
-async def test_dynamic_execute_once(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_dynamic_execute_once(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -618,14 +616,14 @@ async def test_dynamic_execute_once(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 1
 
 
 @pytest.mark.asyncio
-async def test_dynamic_register_again(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_dynamic_register_again(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -640,14 +638,14 @@ async def test_dynamic_register_again(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_dynamic_poll_after_unregister(timemachine, create_args):
-    app = Pyncette(**create_args(timemachine))
+async def test_dynamic_poll_after_unregister(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
 
@@ -668,17 +666,53 @@ async def test_dynamic_poll_after_unregister(timemachine, create_args):
         await timemachine.step(datetime.timedelta(seconds=60))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 0
 
 
 @pytest.mark.asyncio
-async def test_coordination(timemachine, create_args):
-    if create_args(timemachine) == {}:
+async def test_persistence(timemachine, backend):
+    if not backend.is_persistent:
         pytest.skip("This test requires persistence.")
 
-    app = Pyncette(**create_args(timemachine))
+    app = Pyncette(**backend.get_args(timemachine))
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        await ctx.schedule_task(hello, "1", schedule="* * * * *")
+
+    await timemachine.jump_to(datetime.timedelta(seconds=30))
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step()
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 0
+
+    await timemachine.jump_to(datetime.timedelta(seconds=60))
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step()
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_coordination(timemachine, backend):
+    if not backend.is_persistent:
+        pytest.skip("This test requires persistence.")
+
+    app = Pyncette(**backend.get_args(timemachine))
     counter = MagicMock()
 
     @app.task(interval=datetime.timedelta(seconds=2))
@@ -692,17 +726,17 @@ async def test_coordination(timemachine, create_args):
         ctx1.shutdown()
         ctx2.shutdown()
         await asyncio.gather(task1, task2)
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5
 
 
 @pytest.mark.asyncio
-async def test_dynamic_coordination(timemachine, create_args):
-    if create_args(timemachine) == {}:
+async def test_dynamic_coordination(timemachine, backend):
+    if not backend.is_persistent:
         pytest.skip("This test requires persistence.")
 
-    app = Pyncette(**create_args(timemachine))
+    app = Pyncette(**backend.get_args(timemachine))
     counter = MagicMock()
 
     @app.dynamic_task()
@@ -719,6 +753,6 @@ async def test_dynamic_coordination(timemachine, create_args):
         ctx1.shutdown()
         ctx2.shutdown()
         await asyncio.gather(task1, task2)
-        await timemachine.close()
+        await timemachine.unwind()
 
     assert counter.execute.call_count == 5

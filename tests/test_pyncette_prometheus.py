@@ -31,7 +31,7 @@ async def test_successful_task_interval(timemachine):
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
-        await timemachine.close()
+        await timemachine.unwind()
 
     metrics = generate_latest().decode("ascii").splitlines()
     assert 'pyncette_tasks_total{task_name="successful_task"} 5.0' in metrics

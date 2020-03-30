@@ -13,7 +13,7 @@ def wrap_factory(factory, timemachine):
         async with factory(*args, **kwargs) as repo:
             yield timemachine.decorate_io(repo)
 
-    return wrapped_factory
+    return timemachine.decorate_io(wrapped_factory)
 
 
 def random_table_name():
@@ -25,54 +25,78 @@ def random_table_name():
 # Define new configurations here
 
 
-def postgres(timemachine):
-    return {
-        "repository_factory": wrap_factory(postgres_repository, timemachine),
-        "postgres_table_name": random_table_name(),
-        "postgres_url": os.environ.get(
-            "POSTGRES_URL", "postgres://postgres@localhost/pyncette"
-        ),
-    }
+class PostgresBackend:
+    __name__ = "postgres"
+    is_persistent = True
+
+    def get_args(self, timemachine):
+        return {
+            "repository_factory": wrap_factory(postgres_repository, timemachine),
+            "postgres_table_name": random_table_name(),
+            "postgres_url": os.environ.get(
+                "POSTGRES_URL", "postgres://postgres@localhost/pyncette"
+            ),
+        }
 
 
-def redis(timemachine):
-    return {
-        "repository_factory": wrap_factory(redis_repository, timemachine),
-        "redis_namespace": random_table_name(),
-        "redis_timeout": 10,
-        "redis_url": os.environ.get("REDIS_URL", "redis://localhost"),
-    }
+class RedisBackend:
+    __name__ = "redis"
+    is_persistent = True
+
+    def get_args(self, timemachine):
+        return {
+            "repository_factory": wrap_factory(redis_repository, timemachine),
+            "redis_namespace": random_table_name(),
+            "redis_timeout": 10,
+            "redis_url": os.environ.get("REDIS_URL", "redis://localhost"),
+        }
 
 
-def sqlite_persisted(timemachine):
-    return {
-        "repository_factory": sqlite_repository,
-        "sqlite_database": os.environ.get("SQLITE_DATABASE", "pyncette.db"),
-        "sqlite_table_name": random_table_name(),
-    }
+class SqlitePersistedBackend:
+    __name__ = "sqlite_persisted"
+    is_persistent = True
+
+    def get_args(self, timemachine):
+        return {
+            "repository_factory": sqlite_repository,
+            "sqlite_database": os.environ.get("SQLITE_DATABASE", "pyncette.db"),
+            "sqlite_table_name": random_table_name(),
+        }
 
 
-def default(timemachine):
-    return {}
+class DefaultBackend:
+    __name__ = "default"
+    is_persistent = False
+
+    def get_args(self, timemachine):
+        return {}
+
+
+all_backends = [
+    PostgresBackend(),
+    RedisBackend(),
+    DefaultBackend(),
+    SqlitePersistedBackend(),
+]
 
 
 def pytest_addoption(parser):
     parser.addoption(
-        "--repository",
+        "--backend",
         action="append",
-        default=["default"],
+        default=[],
         help="list of repositories to test with",
     )
 
 
 def pytest_generate_tests(metafunc):
-    if "create_args" in metafunc.fixturenames:
-        all_repositories = [postgres, redis, default, sqlite_persisted]
+    if "backend" in metafunc.fixturenames:
         metafunc.parametrize(
-            "create_args",
+            "backend",
             [
                 repository
-                for repository in all_repositories
-                if repository.__name__ in metafunc.config.getoption("repository")
-            ],
+                for repository in all_backends
+                if repository.__name__ in metafunc.config.getoption("backend")
+            ]
+            or all_backends,
         )
