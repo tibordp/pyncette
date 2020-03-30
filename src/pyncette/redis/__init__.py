@@ -208,7 +208,7 @@ class RedisRepository(Repository):
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(Lease, _ScriptResponse)
+        assert isinstance(lease, _ScriptResponse)
         response = await self._manage_record(
             task,
             "COMMIT",
@@ -223,7 +223,7 @@ class RedisRepository(Repository):
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(Lease, _ScriptResponse)
+        assert isinstance(lease, _ScriptResponse)
         response = await self._manage_record(
             task, "UNLOCK", lease.version, lease.locked_by
         )
