@@ -1,0 +1,12 @@
+.git
+**/*.egg-info
+**/__pycache__
+**/.mypy_cache
+*.pyc
+.coverage
+htmlcov/
+**/_build/
+.tox/
+build/
+dist/
+.vscode/

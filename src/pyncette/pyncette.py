@@ -5,6 +5,7 @@ import contextlib
 import copy
 import datetime
 import logging
+import os
 import signal
 import sys
 from functools import partial
@@ -20,6 +21,7 @@ from typing import Optional
 from typing import Tuple
 from typing import cast
 
+import coloredlogs
 import dateutil.tz
 
 from .model import Context
@@ -329,8 +331,13 @@ class Pyncette:
         async with self.create() as context:
             self._setup_signal_handler(context)
             await context.run()
+            logging.info("FINISHED!")
 
     def main(self) -> None:
         """Convenience entrypoint for console apps, which sets up logging and signal handling."""
+        coloredlogs.install(
+            level=os.environ.get("LOG_LEVEL", "INFO"), milliseconds=True
+        )
+
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self._run_main())

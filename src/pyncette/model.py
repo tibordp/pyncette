@@ -34,19 +34,19 @@ class Context:
 
 class TaskFunc(Protocol):
     def __call__(self, context: Context) -> Awaitable[None]:
-        ...
+        "Executes the task"
 
 
 class MiddlewareFunc(Protocol):
     def __call__(
         self, context: Context, next: Callable[[], Awaitable[None]]
     ) -> Awaitable[None]:
-        ...
+        "Executes the middleware"
 
 
 class FixtureFunc(Protocol):
     def __call__(self) -> AsyncIterator[Any]:
-        ...
+        "Executes the fixture"
 
 
 class ResultType(Enum):

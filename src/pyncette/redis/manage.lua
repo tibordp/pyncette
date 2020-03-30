@@ -87,10 +87,10 @@ elseif ARGV[1] == 'REGISTER' then
 elseif ARGV[1] == 'UNREGISTER' then
     if key_exists then
         redis.call('zrem', KEYS[2], getIndexKey())
+        version, execute_after, locked_until, locked_by, task_spec = false, false, false, false, false
+        redis.call('del', KEYS[1])
     end
 
-    version, execute_after, locked_until, locked_by, task_spec = false, false, false, false, false
-    redis.call('del', KEYS[1])
     result = "READY"
 end
 

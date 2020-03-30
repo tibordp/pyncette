@@ -18,7 +18,7 @@ code alongside it.
 
 To see the exported metrics while running this example, use something like
 
-    curl localhost:5000/metrics
+    curl localhost:9699/metrics
 
 """
 
@@ -39,7 +39,6 @@ from pyncette.prometheus import prometheus_middleware
 from pyncette.prometheus import prometheus_repository
 from pyncette.sqlite import sqlite_repository
 
-logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 app = Pyncette(repository_factory=prometheus_repository(sqlite_repository))
@@ -77,5 +76,5 @@ async def schedule_execute_once(context: Context):
 
 
 if __name__ == "__main__":
-    start_http_server(port=5000, addr="0.0.0.0")
+    start_http_server(port=9699, addr="0.0.0.0")
     app.main()

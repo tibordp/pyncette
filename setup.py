@@ -74,6 +74,7 @@ setup(
         "typing-extensions>=3.7.4.1",
         "croniter>=0.3.31",
         "python-dateutil",
+        "coloredlogs",
     ],
     extras_require={
         "redis": ["aioredis>=1.3.1"],

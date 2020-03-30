@@ -252,9 +252,7 @@ class RedisRepository(Repository):
 @contextlib.asynccontextmanager
 async def redis_repository(**kwargs: Any) -> AsyncIterator[RedisRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
-    redis_pool = await aioredis.create_redis_pool(
-        kwargs["redis_url"], timeout=kwargs.get("redis_timeout")
-    )
+    redis_pool = await aioredis.create_redis_pool(kwargs["redis_url"])
     try:
         repository = RedisRepository(redis_pool, **kwargs)
         await repository.register_scripts()

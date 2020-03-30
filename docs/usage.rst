@@ -134,7 +134,7 @@ The :meth:`~pyncette.Pyncette.task` decorator accepts an arbitrary number of add
     @app.task(name="task2", interval=datetime.timedelta(seconds=20), username="kadabra")
     @app.task(name="task3", interval=datetime.timedelta(seconds=30), username="alakazam")
     async def task(context: Context):
-        print(f"{context.username}")
+        print(f"{context.args['username']}")
 
 This allows for parametrized tasks with multiple decorators, this is an essential feature needed to support :ref:`dynamic-tasks`.
 
@@ -282,7 +282,7 @@ Pyncette supports a use case where the tasks are not necessarily known in advanc
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        print(f"Hello {context.username}")
+        print(f"Hello {context.args['username']}")
 
     async with app.create() as ctx:
         await asyncio.gather(
@@ -314,7 +314,7 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
         app = Pyncette(
             repository_factory=redis_repository, 
             redis_url='redis://localhost', 
-            batch_size=100
+            batch_size=10
         )
 
     This will cause that only a specified number of dynamic tasks are scheduled for execution during a single tick, as well as allow potential multiple instances of the same app to load balance effectively.
