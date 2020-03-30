@@ -74,17 +74,13 @@ class _ScriptResponse:
             result=ResultType[response[0].decode()],
             version=int(response[1] or 0),
             execute_after=None
-            if len(response) <= 2 or response[2] is None
+            if response[2] is None
             else datetime.datetime.fromisoformat(response[2].decode()),
             locked_until=None
-            if len(response) <= 3 or response[3] is None
+            if response[3] is None
             else datetime.datetime.fromisoformat(response[3].decode()),
-            locked_by=None
-            if len(response) <= 4 or response[4] is None
-            else response[4].decode(),
-            task_spec=None
-            if len(response) <= 5 or response[5] is None
-            else json.loads(response[5]),
+            locked_by=None if response[4] is None else response[4].decode(),
+            task_spec=None if response[5] is None else json.loads(response[5]),
         )
 
 
@@ -135,31 +131,15 @@ class RedisRepository(Repository):
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        """Registers a dynamic task"""
-        response = await self._manage_script.execute(
-            self._redis_client,
-            keys=[
-                f"pyncette:{self._namespace}:{task.name}",
-                f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
-            ],
-            args=[
-                "REGISTER",
-                task.get_next_execution(utc_now, None).isoformat(),
-                json.dumps(task.as_spec()),
-            ],
+        await self._manage_record(
+            task,
+            "REGISTER",
+            task.get_next_execution(utc_now, None).isoformat(),
+            json.dumps(task.as_spec()),
         )
-        logger.debug(f"register_lua script returned {response}")
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        response = await self._manage_script.execute(
-            self._redis_client,
-            keys=[
-                f"pyncette:{self._namespace}:{task.name}",
-                f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
-            ],
-            args=["UNREGISTER", utc_now.isoformat()],
-        )
-        logger.debug(f"unregister_lua script returned {response}")
+        await self._manage_record(task, "UNREGISTER")
 
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
@@ -195,8 +175,16 @@ class RedisRepository(Repository):
         new_locked_until = utc_now + task.lease_duration
         for _ in range(5):
             next_execution = task.get_next_execution(utc_now, execute_after)
-            response = await self._poll_record(
-                task, utc_now, version, next_execution, new_locked_until, locked_by,
+            response = await self._manage_record(
+                task,
+                "POLL",
+                task.execution_mode.name,
+                "REGULAR" if task.parent_task is None else "DYNAMIC",
+                utc_now.isoformat(),
+                version,
+                next_execution.isoformat(),
+                new_locked_until.isoformat(),
+                locked_by,
             )
             task._last_lease = response  # type: ignore
 
@@ -220,14 +208,13 @@ class RedisRepository(Repository):
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(lease, _ScriptResponse)
-        assert lease.locked_by is not None
-
-        response = await self._commit_record(
+        assert isinstance(Lease, _ScriptResponse)
+        response = await self._manage_record(
             task,
+            "COMMIT",
             lease.version,
-            task.get_next_execution(utc_now, lease.execute_after),
             lease.locked_by,
+            task.get_next_execution(utc_now, lease.execute_after).isoformat(),
         )
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
@@ -236,64 +223,24 @@ class RedisRepository(Repository):
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(lease, _ScriptResponse)
-        assert lease.locked_by is not None
-
-        response = await self._commit_record(task, lease.version, None, lease.locked_by)
+        assert isinstance(Lease, _ScriptResponse)
+        response = await self._manage_record(
+            task, "UNLOCK", lease.version, lease.locked_by
+        )
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not unlocking, as we have lost the lease")
 
-    async def _poll_record(
-        self,
-        task: Task,
-        utc_now: datetime.datetime,
-        version: int,
-        execute_after: datetime.datetime,
-        locked_until: datetime.datetime,
-        locked_by: Optional[str],
-    ) -> _ScriptResponse:
+    async def _manage_record(self, task: Task, *args: Any) -> _ScriptResponse:
         response = await self._manage_script.execute(
             self._redis_client,
             keys=[
                 f"pyncette:{self._namespace}:{task.name}",
                 f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
             ],
-            args=[
-                "POLL",
-                task.execution_mode.name,
-                "REGULAR" if task.parent_task is None else "DYNAMIC",
-                utc_now.isoformat(),
-                version,
-                execute_after.isoformat(),
-                locked_until.isoformat(),
-                locked_by,
-            ],
+            args=list(args),
         )
-        logger.debug(f"poll_lua script returned {response}")
-        return _ScriptResponse.from_response(response)
-
-    async def _commit_record(
-        self,
-        task: Task,
-        version: int,
-        execute_after: Optional[datetime.datetime],
-        locked_by: str,
-    ) -> _ScriptResponse:
-        response = await self._manage_script.execute(
-            self._redis_client,
-            keys=[
-                f"pyncette:{self._namespace}:{task.name}",
-                f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
-            ],
-            args=[
-                "COMMIT",
-                version,
-                locked_by,
-                *([] if execute_after is None else [execute_after.isoformat()]),
-            ],
-        )
-        logger.debug(f"commit_lua script returned {response}")
+        logger.debug(f"manage_lua script returned {response}")
         return _ScriptResponse.from_response(response)
 
     async def register_scripts(self) -> None:
