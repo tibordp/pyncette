@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import heapq
+import inspect
 import logging
 import time
 from functools import total_ordering
@@ -10,6 +11,7 @@ import pytest
 
 import pyncette
 
+actual_sleep = asyncio.sleep
 logger = logging.getLogger(__name__)
 
 
@@ -31,9 +33,33 @@ class TimeMachine:
 
     def __init__(self, base_time):
         self.callbacks = []
+        self.io_tasks = []
         self.base_time = base_time
         self.closed = False
         self.offset = datetime.timedelta(seconds=0)
+
+    def decorate_io(self, obj):
+        def wrapper(func):
+            async def wrapped(*args, **kwargs):
+                future = asyncio.Future()
+                self.io_tasks.append(future)
+                try:
+                    return await func(*args, **kwargs)
+                finally:
+                    future.set_result(None)
+
+            return wrapped
+
+        if inspect.iscoroutinefunction(obj):
+            return wrapper(obj)
+        else:
+            result = type("_Wrapper", (), {})
+            for name, fn in inspect.getmembers(obj):
+                if inspect.iscoroutinefunction(fn):
+                    setattr(result, name, wrapper(fn))
+                elif inspect.isfunction(fn):
+                    setattr(result, name, fn)
+            return result
 
     def sleep(self, seconds):
         future = asyncio.Future()
@@ -51,6 +77,9 @@ class TimeMachine:
         return future
 
     def wait_for(self, awaitable, timeout):
+        if timeout is None:
+            return awaitable
+
         future = asyncio.Future()
         awaitable = asyncio.ensure_future(awaitable)
         wait_handle = self.sleep(timeout)
@@ -81,8 +110,14 @@ class TimeMachine:
         return self.base_time + self.offset
 
     async def _spin(self):
-        """A hack to ensure that all the callbacks have executed after we advance the time, so we can assert immediately after"""
         for _ in range(10):
+            # First we wait for any pending I/O futures to complete
+            if self.io_tasks:
+                io_tasks = self.io_tasks
+                self.io_tasks = []
+                await asyncio.gather(*io_tasks)
+
+            # Then we just jump to the back of the callback queue before completing
             future = asyncio.Future()
             loop = asyncio.get_event_loop()
             loop.call_soon(future.set_result, None)

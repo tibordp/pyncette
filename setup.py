@@ -78,5 +78,6 @@ setup(
     extras_require={
         "redis": ["aioredis>=1.3.1"],
         "prometheus": ["prometheus_client>=0.7.1"],
+        "postgres": ["asyncpg>=0.20.1"],
     },
 )

@@ -216,7 +216,26 @@ Persistence
 
 By default Pyncette runs without persistence. This means that the schedule is mainteined in-memory and there is no coordination between multiple instances of the app.
 
-Enabling persistence allows the aplication to recover from restarts as well as the ability to run multiple instances of an app concurrently without duplicate executions of tasks. At the moment, Redis is the only persistence backend included (though you can write your own!)
+Enabling persistence allows the aplication to recover from restarts as well as the ability to run multiple instances of an app concurrently without duplicate executions of tasks.
+
+SQLite
+++++++
+
+SQLite is the default peristence engine.
+
+.. code-block:: py
+
+    from pyncette import Pyncette, Context
+
+    app = Pyncette(sqlite_database="pyncette.db")
+
+    @app.task(schedule='* * * * * */10')
+    async def foo(context: Context):
+        print('This will run every 10 seconds')
+
+    if __name__ == '__main__':
+        app.main()
+
 
 Redis
 +++++
@@ -230,16 +249,27 @@ Redis can be enabled by passing :meth:`~pyncette.redis.redis_repository` as ``re
 
     app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost')
 
-    @app.task(schedule='* * * * * */10')
-    async def foo(context: Context):
-        print('This will run every 10 seconds')
-
-    if __name__ == '__main__':
-        app.main()
-
 Optionally, the tasks can be namespaced if the Redis server is shared among different Pyncette apps::
 
     app = Pyncette(repository_factory=redis_repository, redis_url='redis://localhost', redis_namespace='my_super_app')
+
+PostgreSQL
+++++++++++
+
+Redis can be enabled by passing :meth:`~pyncette.postgres.postgres_repository` as ``repository_factory`` parameter to the :class:`~pyncette.Pyncette` constructor.
+
+.. code-block:: py
+
+    from pyncette import Pyncette, Context
+    from pyncette.postgres import postgres_repository
+
+    app = Pyncette(
+        repository_factory=postgres_repository, 
+        postgres_url='postgres://postgres@localhost/pyncette'
+        postgres_table_name='pyncette_tasks'
+    )
+
+The table will be automatically initialized on startup if it does not exists.
 
 .. _dynamic-tasks:
 
@@ -284,7 +314,7 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
         app = Pyncette(
             repository_factory=redis_repository, 
             redis_url='redis://localhost', 
-            redis_batch_size=100
+            batch_size=100
         )
 
     This will cause that only a specified number of dynamic tasks are scheduled for execution during a single tick, as well as allow potential multiple instances of the same app to load balance effectively.

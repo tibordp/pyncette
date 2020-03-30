@@ -12,12 +12,12 @@ from pyncette import Context
 from pyncette import Pyncette
 from pyncette.prometheus import prometheus_middleware
 from pyncette.prometheus import prometheus_repository
-from pyncette.repository import in_memory_repository
+from pyncette.sqlite import sqlite_repository
 
 
 @pytest.mark.asyncio
 async def test_successful_task_interval(timemachine):
-    app = Pyncette(repository_factory=prometheus_repository(in_memory_repository),)
+    app = Pyncette(repository_factory=prometheus_repository(sqlite_repository),)
     app.middleware(prometheus_middleware)
 
     counter = MagicMock()

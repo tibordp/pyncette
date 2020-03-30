@@ -35,8 +35,8 @@ from .model import TaskFunc
 from .model import TaskName
 from .repository import Repository
 from .repository import RepositoryFactory
-from .repository import in_memory_repository
 from .scheduler import DefaultScheduler
+from .sqlite import sqlite_repository
 from .task import Task
 
 logger = logging.getLogger(__name__)
@@ -177,6 +177,10 @@ class PyncetteContext:
                 )
             elif poll_response.result == ResultType.LOCKED:
                 logger.debug(f"Not executing task {task}, because it is locked.")
+            else:
+                logger.warn(
+                    f"Unexpected poll response for {task}: {poll_response.result}"
+                )
 
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
@@ -216,7 +220,7 @@ class Pyncette:
 
     def __init__(
         self,
-        repository_factory: RepositoryFactory = in_memory_repository,
+        repository_factory: RepositoryFactory = sqlite_repository,
         poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
         concurrency_limit: int = 100,
         **kwargs: Any,

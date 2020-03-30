@@ -153,6 +153,30 @@ class Task:
             **kwargs,
         )
 
+    def as_spec(self) -> Dict[str, Any]:
+        """Serializes all the attributes to task spec"""
+        return {
+            "name": self.name,
+            "schedule": self.schedule,
+            "interval": self.interval.total_seconds()
+            if self.interval is not None
+            else None,
+            "timezone": self.timezone,
+            "extra_args": self.extra_args,
+        }
+
+    def instantiate_from_spec(self, task_spec: Dict[str, Any]) -> Task:
+        """Deserializes all the attributes from task spec"""
+        return self.instantiate(
+            name=task_spec["name"],
+            schedule=task_spec["schedule"],
+            interval=datetime.timedelta(seconds=task_spec["interval"])
+            if task_spec["interval"] is not None
+            else None,
+            timezone=task_spec["timezone"],
+            **task_spec["extra_args"],
+        )
+
     def __call__(self, context: Context) -> Awaitable[None]:
         return self.task_func(context)
 
