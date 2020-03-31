@@ -2,6 +2,17 @@
 Changelog
 =========
 
+0.6.0 (2020-03-31)
+------------------
+
+* Added PostgreSQL backend
+* Added Sqlite backend and made it the default (replacing `InMemoryRepository`)
+* Refactored test suite to cover all conformance/integration tests on all backends
+* Refactored Redis backend, simplifying the Lua scripts and improving exceptional case handling (e.g. tasks disappearing between query and poll)
+* Main loop only sleeps for the rest of remaining `poll_interval` before next tick instead of the full amount
+* General bug fixes, documentation changes, clean up
+
+
 0.5.0 (2020-03-27)
 ------------------
 
