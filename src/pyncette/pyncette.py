@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import sys
+import time
 from functools import partial
 from itertools import chain
 from typing import Any
@@ -187,18 +188,24 @@ class PyncetteContext:
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
         while not self._shutting_down.is_set():
+            start_time = time.perf_counter()
             try:
                 await self._tick()
             except asyncio.CancelledError:
                 raise
             except Exception as e:
                 logger.warning("Polling tasks failed.", exc_info=e)
+            finally:
+                elapsed_time = time.perf_counter() - start_time
 
             try:
-                await asyncio.wait_for(
-                    self._shutting_down.wait(),
-                    timeout=self._app._poll_interval.total_seconds(),
-                )
+                if elapsed_time < self._app._poll_interval.total_seconds():
+                    await asyncio.wait_for(
+                        self._shutting_down.wait(),
+                        timeout=self._app._poll_interval.total_seconds() - elapsed_time,
+                    )
+                else:
+                    logger.info("Tick took longer than the poll interval.")
             except asyncio.TimeoutError:
                 pass
 

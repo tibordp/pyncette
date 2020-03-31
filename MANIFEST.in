@@ -6,6 +6,8 @@ graft benchmark
 graft examples
 graft docker
 
+exclude docker
+
 include .readthedocs.yml
 include .bumpversion.cfg
 include .coveragerc
@@ -18,6 +20,6 @@ include CONTRIBUTING.rst
 include LICENSE
 include README.rst
 
-include tox.ini .travis.yml .appveyor.yml .dockerignore
+include tox.ini .travis.yml .appveyor.yml
 
-global-exclude *.py[cod] __pycache__/* *.so *.dylib .mypy_cache/** .vscode .vscode/** _build/**
+global-exclude *.py[cod] __pycache__/* *.so *.dylib .mypy_cache/** .vscode .vscode/** _build/** .dockerignore

@@ -1,7 +1,7 @@
 pyncette.postgres module
-=====================
+========================
 
-.. automodule:: pyncette.redis
+.. automodule:: pyncette.postgres
    :members:
    :undoc-members:
    :show-inheritance:

@@ -67,6 +67,7 @@ class PostgresRepository(Repository):
             ready_tasks = await connection.fetch(
                 f"""SELECT * FROM {self._table_name}
                 WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) <= $2
+                ORDER BY GREATEST(locked_until, execute_after) ASC
                 LIMIT $3
                 FOR UPDATE SKIP LOCKED
                 """,
@@ -173,6 +174,8 @@ class PostgresRepository(Repository):
             ):
                 execute_after = task.get_next_execution(utc_now, execute_after)
                 result = ResultType.READY
+                locked_until = None
+                locked_by = None
                 update = True
             elif (
                 execute_after <= utc_now

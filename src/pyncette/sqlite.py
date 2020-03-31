@@ -78,13 +78,14 @@ class SqliteRepository(Repository):
             )
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
-        async with self._transaction():
+        async with self._transaction(explicit_begin=True):
             locked_by = uuid.uuid4()
             locked_until = utc_now + task.lease_duration
 
             ready_tasks = await self._connection.execute_fetchall(
                 f"""SELECT * FROM {self._table_name}
                 WHERE parent_name = $1 AND MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) <= $2
+                ORDER BY MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) ASC
                 LIMIT $3
                 """,
                 (task.name, _to_timestamp(utc_now), self._batch_size),
@@ -117,7 +118,7 @@ class SqliteRepository(Repository):
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        async with self._transaction():
+        async with self._transaction(explicit_begin=True):
             assert task.parent_task is not None
             task_data = await self._connection.execute_fetchall(
                 f"SELECT 1 FROM {self._table_name} WHERE name = ?", (task.name,),
@@ -168,7 +169,7 @@ class SqliteRepository(Repository):
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
-        async with self._transaction():
+        async with self._transaction(explicit_begin=True):
             task_data = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = ?", (task.name,),
             )
@@ -213,6 +214,8 @@ class SqliteRepository(Repository):
             ):
                 execute_after = task.get_next_execution(utc_now, execute_after)
                 result = ResultType.READY
+                locked_until = None
+                locked_by = None
                 await self._update_record(
                     task, locked_until, locked_by, execute_after,
                 )
@@ -236,7 +239,7 @@ class SqliteRepository(Repository):
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        async with self._transaction():
+        async with self._transaction(explicit_begin=True):
             task_data = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = $1", (task.name,)
             )
@@ -301,8 +304,11 @@ class SqliteRepository(Repository):
         )
 
     @contextlib.asynccontextmanager
-    async def _transaction(self) -> AsyncIterator[None]:
+    async def _transaction(self, explicit_begin: bool = False) -> AsyncIterator[None]:
         async with self._lock:
+            # If we only execute a single DML statement, the transaction will be implicitly open
+            # but if we start with a SELECT, we need to be in a transaction explicitely.
+            await self._connection.execute_fetchall("BEGIN")
             try:
                 yield
             except Exception:

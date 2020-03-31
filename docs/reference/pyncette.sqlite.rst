@@ -1,5 +1,5 @@
 pyncette.sqlite module
-=====================
+======================
 
 .. automodule:: pyncette.sqlite
    :members:
