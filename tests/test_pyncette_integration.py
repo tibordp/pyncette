@@ -1,8 +1,5 @@
-# flake8: noqa
-
 import asyncio
 import datetime
-import time
 from typing import Awaitable
 from typing import Callable
 from unittest.mock import MagicMock
@@ -10,7 +7,6 @@ from unittest.mock import call
 
 import dateutil.tz
 import pytest
-from timemachine import timemachine
 
 from pyncette import Context
 from pyncette import ExecutionMode

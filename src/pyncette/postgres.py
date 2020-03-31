@@ -43,31 +43,24 @@ class PostgresRepository(Repository):
             )
 
     async def initialize(self) -> None:
-        async with self._pool.acquire() as connection:
-            async with connection.transaction():
-                await connection.execute(
-                    f"""
-                    CREATE TABLE IF NOT EXISTS {self._table_name} (
-                        name text PRIMARY KEY,
-                        parent_name text,
-                        locked_until timestamptz,
-                        locked_by uuid,
-                        execute_after timestamptz,
-                        task_spec json
-                    );
-                    CREATE INDEX IF NOT EXISTS due_tasks_{self._table_name}
-                    ON {self._table_name} (parent_name, GREATEST(locked_until, execute_after));
-                    """
-                )
-
-    @asynccontextmanager
-    async def transaction(self) -> AsyncIterator[asyncpg.Connection]:
-        async with self._pool.acquire() as connection:
-            async with connection.transaction():
-                yield connection
+        async with self._transaction() as connection:
+            await connection.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {self._table_name} (
+                    name text PRIMARY KEY,
+                    parent_name text,
+                    locked_until timestamptz,
+                    locked_by uuid,
+                    execute_after timestamptz,
+                    task_spec json
+                );
+                CREATE INDEX IF NOT EXISTS due_tasks_{self._table_name}
+                ON {self._table_name} (parent_name, GREATEST(locked_until, execute_after));
+                """
+            )
 
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
-        async with self.transaction() as connection:
+        async with self._transaction() as connection:
             locked_by = uuid.uuid4()
             locked_until = utc_now + task.lease_duration
 
@@ -113,7 +106,7 @@ class PostgresRepository(Repository):
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         assert task.parent_task is not None
 
-        async with self.transaction() as connection:
+        async with self._transaction() as connection:
             result = await connection.execute(
                 f"""
                 INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
@@ -133,40 +126,15 @@ class PostgresRepository(Repository):
             logger.debug(f"register_task returned {result}")
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        async with self.transaction() as connection:
+        async with self._transaction() as connection:
             await connection.execute(
                 f"DELETE FROM {self._table_name} WHERE name = $1", task.name
             )
 
-    async def _update_record(
-        self,
-        connection: asyncpg.Connection,
-        task: Task,
-        locked_until: Optional[datetime.datetime],
-        locked_by: Optional[uuid.UUID],
-        execute_after: Optional[datetime.datetime],
-    ) -> None:
-        result = await connection.execute(
-            f"""
-            INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (name) DO UPDATE
-            SET
-                locked_until = $2,
-                locked_by = $3,
-                execute_after = $4
-            """,
-            task.name,
-            locked_until,
-            locked_by,
-            execute_after,
-        )
-        logger.debug(f"update_record returned {result}")
-
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
-        async with self.transaction() as connection:
+        async with self._transaction() as connection:
             task_data = await connection.fetchrow(
                 f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
                 task.name,
@@ -229,7 +197,7 @@ class PostgresRepository(Repository):
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        async with self.transaction() as connection:
+        async with self._transaction() as connection:
             task_data = await connection.fetchrow(
                 f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
                 task.name,
@@ -255,7 +223,7 @@ class PostgresRepository(Repository):
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        async with self.transaction() as connection:
+        async with self._transaction() as connection:
             result = await connection.execute(
                 f"""
                 UPDATE {self._table_name}
@@ -268,6 +236,37 @@ class PostgresRepository(Repository):
                 lease,
             )
             logger.debug(f"unlock_task returned {result}")
+
+    @asynccontextmanager
+    async def _transaction(self) -> AsyncIterator[asyncpg.Connection]:
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                yield connection
+
+    async def _update_record(
+        self,
+        connection: asyncpg.Connection,
+        task: Task,
+        locked_until: Optional[datetime.datetime],
+        locked_by: Optional[uuid.UUID],
+        execute_after: Optional[datetime.datetime],
+    ) -> None:
+        result = await connection.execute(
+            f"""
+            INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (name) DO UPDATE
+            SET
+                locked_until = $2,
+                locked_by = $3,
+                execute_after = $4
+            """,
+            task.name,
+            locked_until,
+            locked_by,
+            execute_after,
+        )
+        logger.debug(f"update_record returned {result}")
 
 
 @contextlib.asynccontextmanager
