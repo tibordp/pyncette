@@ -1,10 +1,30 @@
+import asyncio
+import datetime
 import os
 import random
+import time
 from contextlib import asynccontextmanager
 
+import dateutil.tz
+import pytest
+from timemachine import TimeMachine
+
+import pyncette
 from pyncette.postgres import postgres_repository
 from pyncette.redis import redis_repository
 from pyncette.sqlite import sqlite_repository
+
+
+@pytest.fixture
+def timemachine(monkeypatch):
+    timemachine = TimeMachine(
+        datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC)
+    )
+    monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
+    monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
+    monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
+    monkeypatch.setattr(time, "perf_counter", timemachine.perf_counter)
+    return timemachine
 
 
 def wrap_factory(factory, timemachine):
@@ -58,7 +78,7 @@ class SqlitePersistedBackend:
 
     def get_args(self, timemachine):
         return {
-            "repository_factory": sqlite_repository,
+            "repository_factory": wrap_factory(sqlite_repository, timemachine),
             "sqlite_database": os.environ.get("SQLITE_DATABASE", "pyncette.db"),
             "sqlite_table_name": random_table_name(),
         }
@@ -69,7 +89,7 @@ class DefaultBackend:
     is_persistent = False
 
     def get_args(self, timemachine):
-        return {}
+        return {"repository_factory": wrap_factory(sqlite_repository, timemachine)}
 
 
 all_backends = [

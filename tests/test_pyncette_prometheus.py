@@ -1,12 +1,10 @@
-# flake8: noqa
-
 import asyncio
 import datetime
 from unittest.mock import MagicMock
 
 import pytest
+from conftest import wrap_factory
 from prometheus_client import generate_latest
-from timemachine import timemachine
 
 from pyncette import Context
 from pyncette import Pyncette
@@ -17,7 +15,11 @@ from pyncette.sqlite import sqlite_repository
 
 @pytest.mark.asyncio
 async def test_successful_task_interval(timemachine):
-    app = Pyncette(repository_factory=prometheus_repository(sqlite_repository),)
+    app = Pyncette(
+        repository_factory=prometheus_repository(
+            wrap_factory(sqlite_repository, timemachine)
+        )
+    )
     app.middleware(prometheus_middleware)
 
     counter = MagicMock()

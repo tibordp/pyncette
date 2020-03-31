@@ -3,13 +3,7 @@ import datetime
 import heapq
 import inspect
 import logging
-import time
 from functools import total_ordering
-
-import dateutil
-import pytest
-
-import pyncette
 
 logger = logging.getLogger(__name__)
 
@@ -176,15 +170,3 @@ class TimeMachine:
         if self.offset != new_offset:
             self.offset = new_offset
             logger.info(f"Jumped to T+{new_offset.total_seconds()}s")
-
-
-@pytest.fixture
-def timemachine(monkeypatch):
-    timemachine = TimeMachine(
-        datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC)
-    )
-    monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
-    monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
-    monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
-    monkeypatch.setattr(time, "perf_counter", timemachine.perf_counter)
-    return timemachine

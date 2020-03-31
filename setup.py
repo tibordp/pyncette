@@ -73,6 +73,7 @@ setup(
     install_requires=[
         "typing-extensions>=3.7.4.1",
         "croniter>=0.3.31",
+        "aiosqlite>=0.11.0",
         "python-dateutil",
         "coloredlogs",
     ],
