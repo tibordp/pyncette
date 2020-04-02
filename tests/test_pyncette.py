@@ -64,7 +64,7 @@ def test_invalid_configuration():
             pass
 
     with pytest.raises(
-        ValueError, match="Schedule must not be specified on dynamic task definitions"
+        ValueError, match="Schedule may not be specified on dynamic task definitions"
     ):
 
         @app.dynamic_task(schedule="* * * * *")

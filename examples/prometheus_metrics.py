@@ -33,8 +33,6 @@ from prometheus_client import start_http_server
 from pyncette import Context
 from pyncette import FailureMode
 from pyncette import Pyncette
-
-# pip install pyncette[prometheus]
 from pyncette.prometheus import prometheus_middleware
 from pyncette.prometheus import prometheus_repository
 from pyncette.sqlite import sqlite_repository

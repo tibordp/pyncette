@@ -106,13 +106,16 @@ class RedisRepository(Repository):
         self._query_script = _LuaScript("query.lua")
         self._manage_script = _LuaScript("manage.lua")
 
+    async def register_scripts(self) -> None:
+        """Registers the Lua scripts used by the implementation ahead of time"""
+        await self._query_script.register(self._redis_client)
+        await self._manage_script.register(self._redis_client)
+
     async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
         new_locked_until = utc_now + task.lease_duration
         response = await self._query_script.execute(
             self._redis_client,
-            keys=[
-                f"pyncette:{self._namespace}:taskset:{task.name if task else '__global__'}"
-            ],
+            keys=[self._get_task_index_key(task)],
             args=[
                 utc_now.isoformat(),
                 self._batch_size,
@@ -235,18 +238,21 @@ class RedisRepository(Repository):
         response = await self._manage_script.execute(
             self._redis_client,
             keys=[
-                f"pyncette:{self._namespace}:{task.name}",
-                f"pyncette:{self._namespace}:taskset:{task.parent_task.name if task.parent_task else '__global__'}",
+                self._get_task_record_key(task),
+                self._get_task_index_key(task.parent_task),
             ],
             args=list(args),
         )
         logger.debug(f"manage_lua script returned {response}")
         return _ScriptResponse.from_response(response)
 
-    async def register_scripts(self) -> None:
-        """Registers the Lua scripts used by the implementation ahead of time"""
-        await self._query_script.register(self._redis_client)
-        await self._manage_script.register(self._redis_client)
+    def _get_task_record_key(self, task: Task) -> str:
+        return f"pyncette:{self._namespace}:task:{task.canonical_name}"
+
+    def _get_task_index_key(self, task: Optional[Task]) -> str:
+        # A prefix-coded index key, so there are no restrictions on task names.
+        index_name = f"index:{task.canonical_name}" if task else "index"
+        return f"pyncette:{self._namespace}:{index_name}"
 
 
 @contextlib.asynccontextmanager

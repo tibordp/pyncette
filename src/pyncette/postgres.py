@@ -65,43 +65,41 @@ class PostgresRepository(Repository):
             locked_until = utc_now + task.lease_duration
 
             ready_tasks = await connection.fetch(
-                f"""SELECT * FROM {self._table_name}
-                WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) <= $2
-                ORDER BY GREATEST(locked_until, execute_after) ASC
-                LIMIT $3
-                FOR UPDATE SKIP LOCKED
+                f"""
+                UPDATE {self._table_name} a
+                SET
+                    locked_until = $4,
+                    locked_by = $5
+                FROM (
+                    SELECT name FROM {self._table_name}
+                    WHERE parent_name = $1 AND GREATEST(locked_until, execute_after) <= $2
+                    ORDER BY GREATEST(locked_until, execute_after) ASC
+                    LIMIT $3
+                    FOR UPDATE SKIP LOCKED
+                ) b
+                WHERE a.name = b.name
+                RETURNING *
                 """,
-                task.name,
+                task.canonical_name,
                 utc_now,
                 self._batch_size,
+                locked_until,
+                locked_by,
             )
             logger.debug(f"query_task returned {ready_tasks}")
-            concrete_tasks = [
-                task.instantiate_from_spec(json.loads(task_data["task_spec"]))
-                for task_data in ready_tasks
-            ]
-            await connection.executemany(
-                f"""
-                UPDATE {self._table_name}
-                SET
-                    locked_until = $2,
-                    locked_by = $3
-                WHERE name = $1
-                """,
-                [
-                    (concrete_task.name, locked_until, locked_by)
-                    for concrete_task in concrete_tasks
-                ],
-            )
+
             return QueryResponse(
                 tasks=[
-                    (concrete_task, Lease(locked_by))
-                    for concrete_task in concrete_tasks
+                    (
+                        task.instantiate_from_spec(json.loads(task_data["task_spec"])),
+                        Lease(locked_by),
+                    )
+                    for task_data in ready_tasks
                 ],
                 # May result in an extra round-trip if there were exactly
                 # batch_size tasks available, but we deem this an acceptable
                 # tradeoff.
-                has_more=len(concrete_tasks) == self._batch_size,
+                has_more=len(ready_tasks) == self._batch_size,
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
@@ -119,8 +117,8 @@ class PostgresRepository(Repository):
                     locked_by = NULL,
                     locked_until = NULL
                 """,
-                task.name,
-                task.parent_task.name,
+                task.canonical_name,
+                task.parent_task.canonical_name,
                 json.dumps(task.as_spec()),
                 task.get_next_execution(utc_now, None),
             )
@@ -129,7 +127,7 @@ class PostgresRepository(Repository):
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction() as connection:
             await connection.execute(
-                f"DELETE FROM {self._table_name} WHERE name = $1", task.name
+                f"DELETE FROM {self._table_name} WHERE name = $1", task.canonical_name
             )
 
     async def poll_task(
@@ -138,7 +136,7 @@ class PostgresRepository(Repository):
         async with self._transaction() as connection:
             task_data = await connection.fetchrow(
                 f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
-                task.name,
+                task.canonical_name,
             )
             logger.debug(f"poll_task returned {task_data}")
 
@@ -203,7 +201,7 @@ class PostgresRepository(Repository):
         async with self._transaction() as connection:
             task_data = await connection.fetchrow(
                 f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
-                task.name,
+                task.canonical_name,
             )
             logger.debug(f"commit_task returned {task_data}")
 
@@ -235,7 +233,7 @@ class PostgresRepository(Repository):
                     locked_until = NULL
                 WHERE name = $1 AND locked_by = $2
                 """,
-                task.name,
+                task.canonical_name,
                 lease,
             )
             logger.debug(f"unlock_task returned {result}")
@@ -264,7 +262,7 @@ class PostgresRepository(Repository):
                 locked_by = $3,
                 execute_after = $4
             """,
-            task.name,
+            task.canonical_name,
             locked_until,
             locked_by,
             execute_after,
