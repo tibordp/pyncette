@@ -2,6 +2,14 @@
 Changelog
 =========
 
+0.6.1 (2020-04-02)
+------------------
+
+* Optimize the task querying on Postgres backend
+* Fix: ensure that there are no name colissions between concrete instances of different dynamic tasks
+* Improve fairness of polling tasks under high contention.
+
+
 0.6.0 (2020-03-31)
 ------------------
 
