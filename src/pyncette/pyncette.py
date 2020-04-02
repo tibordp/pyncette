@@ -16,10 +16,10 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
-from typing import Deque
 from typing import Dict
 from typing import List
 from typing import Optional
+from typing import Sequence
 from typing import Tuple
 
 import coloredlogs
@@ -58,7 +58,6 @@ class PyncetteContext:
     _root_context: Context
     _scheduler: DefaultScheduler
     _shutting_down: asyncio.Event
-    _tasks: Deque[Task]
 
     def __init__(
         self,
@@ -72,7 +71,6 @@ class PyncetteContext:
         self._root_context = root_context
         self._app = app
         self._shutting_down = asyncio.Event()
-        self._tasks = collections.deque()
 
     async def schedule_task(
         self, task: Task, instance_name: str, **kwargs: Any
@@ -147,9 +145,9 @@ class PyncetteContext:
             )
 
     async def _get_active_tasks(
-        self, utc_now: datetime.datetime
+        self, utc_now: datetime.datetime, tasks: Sequence[Task]
     ) -> AsyncIterator[Tuple[Task, Optional[Lease]]]:
-        for task in self._tasks:
+        for task in tasks:
             if task.dynamic:
                 while not self._shutting_down.is_set():
                     query_response = await self._repository.query_task(utc_now, task)
@@ -163,10 +161,10 @@ class PyncetteContext:
             else:
                 yield (task, None)
 
-    async def _tick(self) -> None:
+    async def _tick(self, tasks: Sequence[Task]) -> None:
         utc_now = _current_time()
 
-        async for task, lease in self._get_active_tasks(utc_now):
+        async for task, lease in self._get_active_tasks(utc_now, tasks):
             if self._shutting_down.is_set():
                 break
 
@@ -189,15 +187,15 @@ class PyncetteContext:
 
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
-        self._tasks.clear()
-        self._tasks.extend(self._app._tasks)
+        # Tasks are frozen for the duration of the main loop
+        tasks = collections.deque(self._app._tasks)
 
         while not self._shutting_down.is_set():
             start_time = time.perf_counter()
             try:
                 # Poll the tasks fairly, by rotating the list round-robin
-                self._tasks.rotate(1)
-                await self._tick()
+                tasks.rotate(1)
+                await self._tick(tasks)
             except asyncio.CancelledError:
                 raise
             except Exception as e:
