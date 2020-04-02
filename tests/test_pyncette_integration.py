@@ -590,9 +590,9 @@ async def test_dynamic_successful_task_interval_extra_args(timemachine, backend)
         await task
         await timemachine.unwind()
 
-    counter.execute.assert_any_call("bill")
-    counter.execute.assert_any_call("steve")
-    counter.execute.assert_any_call("tibor")
+    counter.execute.assert_has_calls(
+        [call("bill"), call("steve"), call("tibor")], any_order=True
+    )
 
 
 @pytest.mark.asyncio
@@ -752,3 +752,32 @@ async def test_dynamic_coordination(timemachine, backend):
         await timemachine.unwind()
 
     assert counter.execute.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_dynamic_default_args(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task(username="default")
+    async def hello(context: Context) -> None:
+        counter.execute(context.args["username"])
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(
+            hello, "1", interval=datetime.timedelta(seconds=1), username="rajeev"
+        )
+        await ctx.schedule_task(
+            hello, "2", interval=datetime.timedelta(seconds=1), username="jeethu"
+        )
+        await ctx.schedule_task(hello, "3", interval=datetime.timedelta(seconds=1))
+        await timemachine.step(datetime.timedelta(seconds=1))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    counter.execute.assert_has_calls(
+        [call("rajeev"), call("jeethu"), call("default")], any_order=True
+    )

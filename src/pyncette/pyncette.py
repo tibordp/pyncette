@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import contextlib
 import copy
 import datetime
@@ -10,17 +11,16 @@ import signal
 import sys
 import time
 from functools import partial
-from itertools import chain
 from typing import Any
 from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import Deque
 from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
-from typing import cast
 
 import coloredlogs
 import dateutil.tz
@@ -35,7 +35,6 @@ from .model import MiddlewareFunc
 from .model import PollResponse
 from .model import ResultType
 from .model import TaskFunc
-from .model import TaskName
 from .repository import Repository
 from .repository import RepositoryFactory
 from .scheduler import DefaultScheduler
@@ -59,6 +58,7 @@ class PyncetteContext:
     _root_context: Context
     _scheduler: DefaultScheduler
     _shutting_down: asyncio.Event
+    _tasks: Deque[Task]
 
     def __init__(
         self,
@@ -72,20 +72,20 @@ class PyncetteContext:
         self._root_context = root_context
         self._app = app
         self._shutting_down = asyncio.Event()
+        self._tasks = collections.deque()
 
     async def schedule_task(
-        self, task: Task, instance_name: TaskName, **kwargs: Any
+        self, task: Task, instance_name: str, **kwargs: Any
     ) -> Task:
-        """Schedules a conrete instance of a dynamic task"""
-        task_name = cast(TaskName, f"{task.name}:{instance_name}")
-        concrete_task = task.instantiate(task_name, **kwargs)
+        """Schedules a concrete instance of a dynamic task"""
+        concrete_task = task.instantiate(instance_name, **kwargs)
         utc_now = _current_time()
 
         await self._repository.register_task(utc_now, concrete_task)
         return concrete_task
 
     async def unschedule_task(
-        self, task: Task, instance_name: Optional[TaskName] = None
+        self, task: Task, instance_name: Optional[str] = None
     ) -> None:
         """Removes the concrete instance of a dynamic task"""
 
@@ -94,10 +94,11 @@ class PyncetteContext:
         if task.parent_task:
             concrete_task = task
         else:
-            if not instance_name:
+            if instance_name is None:
                 raise ValueError("instance name must be provided")
-            task_name = cast(TaskName, f"{task.name}:{instance_name}")
-            concrete_task = task.instantiate(task_name, interval=datetime.timedelta())
+            concrete_task = task.instantiate(
+                instance_name, interval=datetime.timedelta()
+            )
 
         utc_now = _current_time()
         await self._repository.unregister_task(utc_now, concrete_task)
@@ -148,18 +149,19 @@ class PyncetteContext:
     async def _get_active_tasks(
         self, utc_now: datetime.datetime
     ) -> AsyncIterator[Tuple[Task, Optional[Lease]]]:
-        for task in self._app._concrete_tasks:
-            yield (task, None)
-        for task in self._app._dynamic_tasks:
-            while not self._shutting_down.is_set():
-                query_response = await self._repository.query_task(utc_now, task)
-                for task_and_lease in query_response.tasks:
-                    yield task_and_lease
+        for task in self._tasks:
+            if task.dynamic:
+                while not self._shutting_down.is_set():
+                    query_response = await self._repository.query_task(utc_now, task)
+                    for task_and_lease in query_response.tasks:
+                        yield task_and_lease
 
-                if not query_response.has_more:
-                    break
+                    if not query_response.has_more:
+                        break
 
-                logger.debug(f"Dynamic {task} has more due instances, looping.")
+                    logger.debug(f"Dynamic {task} has more due instances, looping.")
+            else:
+                yield (task, None)
 
     async def _tick(self) -> None:
         utc_now = _current_time()
@@ -187,9 +189,14 @@ class PyncetteContext:
 
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
+        self._tasks.clear()
+        self._tasks.extend(self._app._tasks)
+
         while not self._shutting_down.is_set():
             start_time = time.perf_counter()
             try:
+                # Poll the tasks fairly, by rotating the list round-robin
+                self._tasks.rotate(1)
                 await self._tick()
             except asyncio.CancelledError:
                 raise
@@ -218,8 +225,7 @@ class PyncetteContext:
 class Pyncette:
     """Pyncette application."""
 
-    _concrete_tasks: List[Task]
-    _dynamic_tasks: List[Task]
+    _tasks: List[Task]
     _fixtures: List[Tuple[str, Callable[..., AsyncContextManager[Any]]]]
     _middlewares: List[MiddlewareFunc]
     _repository_factory: RepositoryFactory
@@ -234,8 +240,7 @@ class Pyncette:
         concurrency_limit: int = 100,
         **kwargs: Any,
     ) -> None:
-        self._concrete_tasks = []
-        self._dynamic_tasks = []
+        self._tasks = []
         self._fixtures = []
         self._middlewares = []
         self._poll_interval = poll_interval
@@ -253,7 +258,7 @@ class Pyncette:
             }
             self._check_task_name(task_kwargs["name"])
             task = Task(func=func, dynamic=False, **task_kwargs)
-            self._concrete_tasks.append(task)
+            self._tasks.append(task)
             return task
 
         return _func
@@ -269,7 +274,7 @@ class Pyncette:
 
             self._check_task_name(task_kwargs["name"])
             task = Task(func=func, dynamic=True, **task_kwargs)
-            self._dynamic_tasks.append(task)
+            self._tasks.append(task)
             return task
 
         return _func
@@ -278,7 +283,7 @@ class Pyncette:
         if name is None:
             raise ValueError("Unable to determine name for the task")
 
-        for task in chain(self._concrete_tasks, self._dynamic_tasks):
+        for task in self._tasks:
             if task.name == name:
                 raise ValueError(f"Duplicate task name {name}")
 

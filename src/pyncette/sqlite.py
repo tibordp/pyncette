@@ -88,7 +88,7 @@ class SqliteRepository(Repository):
                 ORDER BY MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) ASC
                 LIMIT $3
                 """,
-                (task.name, _to_timestamp(utc_now), self._batch_size),
+                (task.canonical_name, _to_timestamp(utc_now), self._batch_size),
             )
 
             concrete_tasks = [
@@ -105,7 +105,11 @@ class SqliteRepository(Repository):
                 WHERE name = $1
                 """,
                 [
-                    (concrete_task.name, _to_timestamp(locked_until), str(locked_by))
+                    (
+                        concrete_task.canonical_name,
+                        _to_timestamp(locked_until),
+                        str(locked_by),
+                    )
                     for concrete_task in concrete_tasks
                 ],
             )
@@ -121,7 +125,8 @@ class SqliteRepository(Repository):
         async with self._transaction(explicit_begin=True):
             assert task.parent_task is not None
             task_data = await self._connection.execute_fetchall(
-                f"SELECT 1 FROM {self._table_name} WHERE name = ?", (task.name,),
+                f"SELECT 1 FROM {self._table_name} WHERE name = ?",
+                (task.canonical_name,),
             )
 
             if task_data:
@@ -137,7 +142,7 @@ class SqliteRepository(Repository):
                         name = :name
                     """,
                     {
-                        "name": task.name,
+                        "name": task.canonical_name,
                         "task_spec": json.dumps(task.as_spec()),
                         "execute_after": _to_timestamp(
                             task.get_next_execution(utc_now, None)
@@ -151,8 +156,8 @@ class SqliteRepository(Repository):
                     VALUES (:name, :parent_name, :task_spec, :execute_after)
                     """,
                     {
-                        "name": task.name,
-                        "parent_name": task.parent_task.name,
+                        "name": task.canonical_name,
+                        "parent_name": task.parent_task.canonical_name,
                         "task_spec": json.dumps(task.as_spec()),
                         "execute_after": _to_timestamp(
                             task.get_next_execution(utc_now, None)
@@ -163,7 +168,8 @@ class SqliteRepository(Repository):
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction():
             await self._connection.execute_fetchall(
-                f"DELETE FROM {self._table_name} WHERE name = $1", (task.name,)
+                f"DELETE FROM {self._table_name} WHERE name = $1",
+                (task.canonical_name,),
             )
 
     async def poll_task(
@@ -171,7 +177,8 @@ class SqliteRepository(Repository):
     ) -> PollResponse:
         async with self._transaction(explicit_begin=True):
             task_data = await self._connection.execute_fetchall(
-                f"SELECT * FROM {self._table_name} WHERE name = ?", (task.name,),
+                f"SELECT * FROM {self._table_name} WHERE name = ?",
+                (task.canonical_name,),
             )
 
             if not task_data:
@@ -189,7 +196,7 @@ class SqliteRepository(Repository):
                     INSERT INTO {self._table_name} (name, execute_after)
                     VALUES (:name, :locked_until)
                     """,
-                    (task.name, _to_timestamp(execute_after)),
+                    (task.canonical_name, _to_timestamp(execute_after)),
                 )
             else:
                 record = task_data[0]
@@ -241,7 +248,8 @@ class SqliteRepository(Repository):
     ) -> None:
         async with self._transaction(explicit_begin=True):
             task_data = await self._connection.execute_fetchall(
-                f"SELECT * FROM {self._table_name} WHERE name = $1", (task.name,)
+                f"SELECT * FROM {self._table_name} WHERE name = $1",
+                (task.canonical_name,),
             )
 
             if not task_data:
@@ -276,7 +284,7 @@ class SqliteRepository(Repository):
                     locked_until = NULL
                 WHERE name = ? AND locked_by = ?
                 """,
-                (task.name, str(lease)),
+                (task.canonical_name, str(lease)),
             )
 
     async def _update_record(
@@ -296,7 +304,7 @@ class SqliteRepository(Repository):
             WHERE name = :name
             """,
             {
-                "name": task.name,
+                "name": task.canonical_name,
                 "locked_until": _to_timestamp(locked_until),
                 "locked_by": str(locked_by),
                 "execute_after": _to_timestamp(execute_after),

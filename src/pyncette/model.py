@@ -20,7 +20,6 @@ from typing_extensions import Protocol
 T = TypeVar("T")
 Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
-TaskName = NewType("TaskName", str)
 
 
 class Context:

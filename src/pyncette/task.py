@@ -16,7 +16,6 @@ from .model import Context
 from .model import ExecutionMode
 from .model import FailureMode
 from .model import TaskFunc
-from .model import TaskName
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,7 @@ logger = logging.getLogger(__name__)
 class Task:
     """The base unit of execution"""
 
-    name: TaskName
+    name: str
     task_func: TaskFunc
     schedule: Optional[str]
     interval: Optional[datetime.timedelta]
@@ -38,7 +37,7 @@ class Task:
 
     def __init__(
         self,
-        name: TaskName,
+        name: str,
         func: TaskFunc,
         dynamic: bool = False,
         parent_task: "Task" = None,
@@ -84,18 +83,18 @@ class Task:
                 raise ValueError("One of schedule or interval must be specified")
             if self.schedule is None and self.timezone is not None:
                 raise ValueError(
-                    "Timezone can only be specified when cron schedule is used"
+                    "Timezone may only be specified when cron schedule is used"
                 )
             if self.schedule is not None:
                 croniter.expand(self.schedule)
         else:
             if self.schedule is not None or self.interval is not None:
                 raise ValueError(
-                    "Schedule must not be specified on dynamic task definitions."
+                    "Schedule may not be specified on dynamic task definitions."
                 )
             if self.timezone is not None:
                 raise ValueError(
-                    f"Timezone must not be specified on dynamic task definitions."
+                    f"Timezone may not be specified on dynamic task definitions."
                 )
 
         if dateutil.tz.gettz(self.timezone) is None:
@@ -136,11 +135,11 @@ class Task:
 
         assert False
 
-    def instantiate(self, name: TaskName, **kwargs: Any) -> Task:
+    def instantiate(self, name: str, **kwargs: Any) -> Task:
         """Creates a concrete instance of a dynamic task"""
 
         if not self.dynamic:
-            raise ValueError("Cannot instantiate a dynamic task")
+            raise ValueError("Cannot instantiate a non-dynamic task")
 
         return Task(
             name=name,
@@ -150,8 +149,18 @@ class Task:
             execution_mode=self.execution_mode,
             lease_duration=self.lease_duration,
             parent_task=self,
-            **kwargs,
+            **{**self.extra_args, **kwargs},
         )
+
+    @property
+    def canonical_name(self) -> str:
+        """A unique identifier for a task instance"""
+        if self.parent_task is not None:
+            return "{}:{}".format(
+                self.parent_task.name.replace(":", "::"), self.name.replace(":", "::")
+            )
+        else:
+            return self.name.replace(":", "::")
 
     def as_spec(self) -> Dict[str, Any]:
         """Serializes all the attributes to task spec"""
