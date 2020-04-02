@@ -251,7 +251,7 @@ class RedisRepository(Repository):
 
     def _get_task_index_key(self, task: Optional[Task]) -> str:
         # A prefix-coded index key, so there are no restrictions on task names.
-        index_name = f"index:{task.canonical_name}" if task else "global_index"
+        index_name = f"index:{task.canonical_name}" if task else "index"
         return f"pyncette:{self._namespace}:{index_name}"
 
 
