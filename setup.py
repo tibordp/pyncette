@@ -26,7 +26,7 @@ setup(
     name="pyncette",
     version="0.6.1",
     license="MIT",
-    description="A reliable distributed cron with pluggable storage backends",
+    description="A reliable distributed scheduler with pluggable storage backends",
     long_description="%s\n%s"
     % (
         re.compile("^.. start-badges.*^.. end-badges", re.M | re.S).sub(

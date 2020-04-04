@@ -58,6 +58,7 @@ The other way is with an interval::
     async def every_12_seconds(context: Context):
         ...
 
+
 Customizing tasks
 -----------------
 
@@ -318,6 +319,27 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
         )
 
     This will cause that only a specified number of dynamic tasks are scheduled for execution during a single tick, as well as allow potential multiple instances of the same app to load balance effectively.
+
+Once-off dynamic tasks
+----------------------
+
+Dynamic tasks can also be scheduled to execute only once at a specific date.
+
+.. code-block:: python
+
+    @app.dynamic_task()
+    async def task(context: Context) -> None:
+        print(f"Hello {context.task.name}!")
+
+    async with app.create() as ctx:
+        await ctx.schedule_task(task, "y2k38", execute_at=datetime(2038, 1, 19, 3, 14, 7));
+        await ctx.schedule_task(task, "tomorrow", execute_at=datetime.now() + timedelta(days=1));
+        
+        # This will execute once immediately, since it is already overdue
+        await ctx.schedule_task(task, "overdue", execute_at=datetime.now() - timedelta(days=1));
+        await ctx.run()
+
+Once-off tasks have the same reliability guarantees as recurrent tasks, which is controlled by `execution_mode` and `failure_mode` parameters, but in case of success, they will not be scheduled again.
 
 Performance
 -----------

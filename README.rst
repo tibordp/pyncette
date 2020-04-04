@@ -47,7 +47,7 @@ Overview
 
 .. end-badges
 
-A reliable distributed cron with pluggable storage backends
+A reliable distributed scheduler with pluggable storage backends
 
 * Free software: MIT license
 
@@ -80,7 +80,7 @@ https://pyncette.readthedocs.io
 Usage example
 =============
 
-Simple in-memory cron (does not persist state)
+Simple in-memory scheduler (does not persist state)
 
 .. code:: python
 

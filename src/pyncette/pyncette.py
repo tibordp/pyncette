@@ -37,7 +37,7 @@ from .model import ResultType
 from .model import TaskFunc
 from .repository import Repository
 from .repository import RepositoryFactory
-from .scheduler import DefaultScheduler
+from .executor import DefaultExecutor
 from .sqlite import sqlite_repository
 from .task import Task
 
@@ -56,18 +56,18 @@ class PyncetteContext:
     _app: Pyncette
     _repository: Repository
     _root_context: Context
-    _scheduler: DefaultScheduler
+    _executor: DefaultExecutor
     _shutting_down: asyncio.Event
 
     def __init__(
         self,
         app: Pyncette,
         repository: Repository,
-        scheduler: DefaultScheduler,
+        executor: DefaultExecutor,
         root_context: Context,
     ):
         self._repository = repository
-        self._scheduler = scheduler
+        self._executor = executor
         self._root_context = root_context
         self._app = app
         self._shutting_down = asyncio.Event()
@@ -150,7 +150,9 @@ class PyncetteContext:
         for task in tasks:
             if task.dynamic:
                 while not self._shutting_down.is_set():
-                    query_response = await self._repository.query_task(utc_now, task)
+                    query_response = await self._repository.poll_dynamic_task(
+                        utc_now, task
+                    )
                     for task_and_lease in query_response.tasks:
                         yield task_and_lease
 
@@ -171,9 +173,7 @@ class PyncetteContext:
             poll_response = await self._repository.poll_task(utc_now, task, lease)
             if poll_response.result == ResultType.READY:
                 logger.info(f"Executing task {task} with {task.extra_args}")
-                await self._scheduler.spawn_task(
-                    self._execute_task(task, poll_response)
-                )
+                await self._executor.spawn_task(self._execute_task(task, poll_response))
             elif poll_response.result == ResultType.PENDING:
                 logger.debug(
                     f"Not executing task {task}, because it is not yet scheduled."
@@ -310,12 +310,12 @@ class Pyncette:
         """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration
-        ) as repository, DefaultScheduler(
+        ) as repository, DefaultExecutor(
             self._concurrency_limit
-        ) as scheduler, contextlib.AsyncExitStack() as stack:
+        ) as executor, contextlib.AsyncExitStack() as stack:
             root_context = await self._create_root_context(repository, stack)
 
-            yield PyncetteContext(self, repository, scheduler, root_context)
+            yield PyncetteContext(self, repository, executor, root_context)
 
     def _setup_signal_handler(self, context: PyncetteContext) -> None:
         def handler(signum: Any, frame: Any) -> None:

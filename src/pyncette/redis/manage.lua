@@ -19,7 +19,7 @@ local function setKey(attr, val)
 end
 
 -- Update the task data while also updating the index
-local function updateTaskData(new_execute_after, new_locked_until, new_locked_by, new_task_spec)
+local function updateRecord(new_execute_after, new_locked_until, new_locked_by, new_task_spec)
     redis.call('zrem', KEYS[2], getIndexKey())
     version, execute_after, locked_until, locked_by, task_spec = version + 1, new_execute_after, new_locked_until, new_locked_by, new_task_spec
     setKey('version', version)
@@ -29,6 +29,13 @@ local function updateTaskData(new_execute_after, new_locked_until, new_locked_by
     setKey('task_spec', task_spec)
     redis.call('zadd', KEYS[2], 0, getIndexKey())
 end
+
+local function deleteRecord()
+    redis.call('zrem', KEYS[2], getIndexKey())
+    version, execute_after, locked_until, locked_by, task_spec = false, false, false, false, false
+    redis.call('del', KEYS[1])
+end
+
 
 if ARGV[1] == 'POLL' then
     local _, mode, task_type, utc_now, incoming_version, incoming_execute_after, incoming_locked_until, incoming_locked_by = unpack(ARGV)
@@ -45,11 +52,14 @@ if ARGV[1] == 'POLL' then
         result = "LOCKED"
     elseif execute_after <= utc_now and version ~= incoming_version then
         result = "LEASE_MISMATCH"
+    elseif execute_after <= utc_now and mode == 'AT_MOST_ONCE' and incoming_execute_after == '' then
+        deleteRecord()
+        result = "READY"
     elseif execute_after <= utc_now and mode == 'AT_MOST_ONCE' then
-        updateTaskData(incoming_execute_after, false, false, task_spec)
+        updateRecord(incoming_execute_after, false, false, task_spec)
         result = "READY"
     elseif execute_after <= utc_now and mode == 'AT_LEAST_ONCE' then
-        updateTaskData(execute_after, incoming_locked_until, incoming_locked_by, task_spec)
+        updateRecord(execute_after, incoming_locked_until, incoming_locked_by, task_spec)
         result = "READY"
     else
         result = "PENDING"
@@ -57,17 +67,20 @@ if ARGV[1] == 'POLL' then
 elseif ARGV[1] == 'COMMIT' then
     local _, incoming_version, incoming_locked_by, incoming_execute_after = unpack(ARGV)
 
-    if version == incoming_version and locked_by == incoming_locked_by then
-        updateTaskData(incoming_execute_after, false, false, task_spec)
+    if not (version == incoming_version and locked_by == incoming_locked_by) then
+        result = "LEASE_MISMATCH"
+    elseif incoming_execute_after == '' then
+        deleteRecord()
         result = "READY"
     else
-        result = "LEASE_MISMATCH"
+        updateRecord(incoming_execute_after, false, false, task_spec)
+        result = "READY"
     end
 elseif ARGV[1] == 'UNLOCK' then
     local _, incoming_version, incoming_locked_by = unpack(ARGV)
 
     if version == incoming_version and locked_by == incoming_locked_by then
-        updateTaskData(execute_after, false, false, task_spec)
+        updateRecord(execute_after, false, false, task_spec)
         result = "READY"
     else
         result = "LEASE_MISMATCH"
@@ -80,15 +93,13 @@ elseif ARGV[1] == 'REGISTER' then
         redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after, 'task_spec', task_spec)
         redis.call('zadd', KEYS[2], 0, getIndexKey())
     else
-        updateTaskData(incoming_execute_after, false, false, incoming_task_spec)
+        updateRecord(incoming_execute_after, false, false, incoming_task_spec)
     end
 
     result = "READY"
 elseif ARGV[1] == 'UNREGISTER' then
     if key_exists then
-        redis.call('zrem', KEYS[2], getIndexKey())
-        version, execute_after, locked_until, locked_by, task_spec = false, false, false, false, false
-        redis.call('del', KEYS[1])
+        deleteRecord()
     end
 
     result = "READY"

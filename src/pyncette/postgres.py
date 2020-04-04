@@ -59,7 +59,9 @@ class PostgresRepository(Repository):
                 """
             )
 
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+    async def poll_dynamic_task(
+        self, utc_now: datetime.datetime, task: Task
+    ) -> QueryResponse:
         async with self._transaction() as connection:
             locked_by = uuid.uuid4()
             locked_until = utc_now + task.lease_duration
@@ -86,15 +88,15 @@ class PostgresRepository(Repository):
                 locked_until,
                 locked_by,
             )
-            logger.debug(f"query_task returned {ready_tasks}")
+            logger.debug(f"poll_dynamic_task returned {ready_tasks}")
 
             return QueryResponse(
                 tasks=[
                     (
-                        task.instantiate_from_spec(json.loads(task_data["task_spec"])),
+                        task.instantiate_from_spec(json.loads(record["task_spec"])),
                         Lease(locked_by),
                     )
-                    for task_data in ready_tasks
+                    for record in ready_tasks
                 ],
                 # May result in an extra round-trip if there were exactly
                 # batch_size tasks available, but we deem this an acceptable
@@ -134,14 +136,14 @@ class PostgresRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
         async with self._transaction() as connection:
-            task_data = await connection.fetchrow(
+            record = await connection.fetchrow(
                 f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
                 task.canonical_name,
             )
-            logger.debug(f"poll_task returned {task_data}")
+            logger.debug(f"poll_task returned {record}")
 
             update = False
-            if task_data is None:
+            if record is None:
                 # Regular (non-dynamic) tasks will be implicitly created on first poll,
                 # but dynamic task instances must be explicitely created to prevent spurious
                 # poll from re-creating them after being deleted.
@@ -153,11 +155,11 @@ class PostgresRepository(Repository):
                 locked_by = None
                 update = True
             else:
-                execute_after = task_data["execute_after"]
-                locked_until = task_data["locked_until"]
-                locked_by = task_data["locked_by"]
+                execute_after = record["execute_after"]
+                locked_until = record["locked_until"]
+                locked_by = record["locked_by"]
 
-            # We need the original scheduled date for later
+            assert execute_after is not None
             scheduled_at = execute_after
 
             if (
@@ -199,17 +201,17 @@ class PostgresRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         async with self._transaction() as connection:
-            task_data = await connection.fetchrow(
+            record = await connection.fetchrow(
                 f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
                 task.canonical_name,
             )
-            logger.debug(f"commit_task returned {task_data}")
+            logger.debug(f"commit_task returned {record}")
 
-            if not task_data:
+            if not record:
                 logger.warning(f"Task {task} not found, skipping.")
                 return
 
-            if task_data["locked_by"] != lease:
+            if record["locked_by"] != lease:
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
 
@@ -218,7 +220,7 @@ class PostgresRepository(Repository):
                 task,
                 None,
                 None,
-                task.get_next_execution(utc_now, task_data["execute_after"]),
+                task.get_next_execution(utc_now, record["execute_after"]),
             )
 
     async def unlock_task(
@@ -252,21 +254,26 @@ class PostgresRepository(Repository):
         locked_by: Optional[uuid.UUID],
         execute_after: Optional[datetime.datetime],
     ) -> None:
-        result = await connection.execute(
-            f"""
-            INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (name) DO UPDATE
-            SET
-                locked_until = $2,
-                locked_by = $3,
-                execute_after = $4
-            """,
-            task.canonical_name,
-            locked_until,
-            locked_by,
-            execute_after,
-        )
+        if execute_after is None:
+            result = await connection.execute(
+                f"DELETE FROM {self._table_name} WHERE name = $1", task.canonical_name
+            )
+        else:
+            result = await connection.execute(
+                f"""
+                INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (name) DO UPDATE
+                SET
+                    locked_until = $2,
+                    locked_by = $3,
+                    execute_after = $4
+                """,
+                task.canonical_name,
+                locked_until,
+                locked_by,
+                execute_after,
+            )
         logger.debug(f"update_record returned {result}")
 
 

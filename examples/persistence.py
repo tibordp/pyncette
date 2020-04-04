@@ -11,6 +11,9 @@ efficient or most elegant way of doing it.
 """
 
 import asyncio
+
+asyncio.coroutine
+
 import datetime
 import logging
 import random
@@ -20,7 +23,6 @@ from pyncette import Context
 from pyncette import FailureMode
 from pyncette import Pyncette
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Pyncette(sqlite_database="pyncette.db")

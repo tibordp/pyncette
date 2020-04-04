@@ -60,7 +60,7 @@ class _LuaScript:
 
 
 @dataclass
-class _ScriptResponse:
+class _ManageScriptResponse:
     result: ResultType
     version: int
     execute_after: Optional[datetime.datetime]
@@ -69,7 +69,7 @@ class _ScriptResponse:
     locked_by: Optional[str]
 
     @classmethod
-    def from_response(cls, response: List[bytes]) -> _ScriptResponse:
+    def from_response(cls, response: List[bytes]) -> _ManageScriptResponse:
         return cls(
             result=ResultType[response[0].decode()],
             version=int(response[1] or 0),
@@ -85,7 +85,7 @@ class _ScriptResponse:
 
 
 def _create_dynamic_task(task: Task, response_data: List[bytes]) -> Tuple[Task, Lease]:
-    task_data = _ScriptResponse.from_response(response_data)
+    task_data = _ManageScriptResponse.from_response(response_data)
     assert task_data.task_spec is not None
 
     return (task.instantiate_from_spec(task_data.task_spec), Lease(task_data))
@@ -97,23 +97,25 @@ class RedisRepository(Repository):
     _redis_client: aioredis.Redis
     _namespace: str
     _manage_script: _LuaScript
-    _query_script: _LuaScript
+    _poll_dynamic_script: _LuaScript
 
     def __init__(self, redis_client: aioredis.Redis, **kwargs: Any):
         self._redis_client = redis_client
         self._namespace = kwargs.get("redis_namespace", "")
         self._batch_size = kwargs.get("batch_size", 100)
-        self._query_script = _LuaScript("query.lua")
+        self._poll_dynamic_script = _LuaScript("poll_dynamic.lua")
         self._manage_script = _LuaScript("manage.lua")
 
     async def register_scripts(self) -> None:
         """Registers the Lua scripts used by the implementation ahead of time"""
-        await self._query_script.register(self._redis_client)
+        await self._poll_dynamic_script.register(self._redis_client)
         await self._manage_script.register(self._redis_client)
 
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+    async def poll_dynamic_task(
+        self, utc_now: datetime.datetime, task: Task
+    ) -> QueryResponse:
         new_locked_until = utc_now + task.lease_duration
-        response = await self._query_script.execute(
+        response = await self._poll_dynamic_script.execute(
             self._redis_client,
             keys=[self._get_task_index_key(task)],
             args=[
@@ -134,11 +136,11 @@ class RedisRepository(Repository):
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+        execute_after = task.get_next_execution(utc_now, None)
+        assert execute_after is not None
+
         await self._manage_record(
-            task,
-            "REGISTER",
-            task.get_next_execution(utc_now, None).isoformat(),
-            json.dumps(task.as_spec()),
+            task, "REGISTER", execute_after.isoformat(), json.dumps(task.as_spec()),
         )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
@@ -154,7 +156,7 @@ class RedisRepository(Repository):
         # so by caching it, we can poll a task using a single round-trip (if we are wrong, the loop below will still
         # ensure corretness as the version will not match).
         last_lease = getattr(task, "_last_lease", None)
-        if isinstance(lease, _ScriptResponse):
+        if isinstance(lease, _ManageScriptResponse):
             version, execute_after, locked_by = (
                 lease.version,
                 lease.execute_after,
@@ -185,7 +187,7 @@ class RedisRepository(Repository):
                 "REGULAR" if task.parent_task is None else "DYNAMIC",
                 utc_now.isoformat(),
                 version,
-                next_execution.isoformat(),
+                next_execution.isoformat() if next_execution is not None else "",
                 new_locked_until.isoformat(),
                 locked_by,
             )
@@ -211,13 +213,14 @@ class RedisRepository(Repository):
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(lease, _ScriptResponse)
+        assert isinstance(lease, _ManageScriptResponse)
+        next_execution = task.get_next_execution(utc_now, lease.execute_after)
         response = await self._manage_record(
             task,
             "COMMIT",
             lease.version,
             lease.locked_by,
-            task.get_next_execution(utc_now, lease.execute_after).isoformat(),
+            next_execution.isoformat() if next_execution is not None else "",
         )
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
@@ -226,7 +229,7 @@ class RedisRepository(Repository):
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(lease, _ScriptResponse)
+        assert isinstance(lease, _ManageScriptResponse)
         response = await self._manage_record(
             task, "UNLOCK", lease.version, lease.locked_by
         )
@@ -234,7 +237,7 @@ class RedisRepository(Repository):
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not unlocking, as we have lost the lease")
 
-    async def _manage_record(self, task: Task, *args: Any) -> _ScriptResponse:
+    async def _manage_record(self, task: Task, *args: Any) -> _ManageScriptResponse:
         response = await self._manage_script.execute(
             self._redis_client,
             keys=[
@@ -244,7 +247,7 @@ class RedisRepository(Repository):
             args=list(args),
         )
         logger.debug(f"manage_lua script returned {response}")
-        return _ScriptResponse.from_response(response)
+        return _ManageScriptResponse.from_response(response)
 
     def _get_task_record_key(self, task: Task) -> str:
         return f"pyncette:{self._namespace}:task:{task.canonical_name}"

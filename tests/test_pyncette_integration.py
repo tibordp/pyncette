@@ -378,7 +378,7 @@ async def test_multi_task(timemachine, backend):
 @pytest.mark.asyncio
 async def test_timezone_support(timemachine, backend):
     app = Pyncette(
-        **backend.get_args(timemachine), poll_interval=datetime.timedelta(minutes=10)
+        **backend.get_args(timemachine), poll_interval=datetime.timedelta(hours=1)
     )
 
     counter = MagicMock()
@@ -761,23 +761,134 @@ async def test_dynamic_default_args(timemachine, backend):
     counter = MagicMock()
 
     @app.dynamic_task(username="default")
-    async def hello(context: Context) -> None:
-        counter.execute(context.args["username"])
+    async def hello1(context: Context) -> None:
+        counter.task1.execute(context.args["username"])
+
+    @app.dynamic_task(interval=datetime.timedelta(seconds=1))
+    async def hello2(context: Context) -> None:
+        counter.task2.execute(context.args["username"])
+
+    @app.dynamic_task(schedule="* * * * * *")
+    async def hello3(context: Context) -> None:
+        counter.task3.execute(context.args["username"])
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
         await ctx.schedule_task(
-            hello, "1", interval=datetime.timedelta(seconds=1), username="rajeev"
+            hello1, "1", interval=datetime.timedelta(seconds=1), username="rajeev"
         )
         await ctx.schedule_task(
-            hello, "2", interval=datetime.timedelta(seconds=1), username="jeethu"
+            hello1, "2", interval=datetime.timedelta(seconds=1), username="jeethu"
         )
-        await ctx.schedule_task(hello, "3", interval=datetime.timedelta(seconds=1))
+        await ctx.schedule_task(hello1, "3", interval=datetime.timedelta(seconds=1))
+        await ctx.schedule_task(hello2, "4", username="imaana")
+        await ctx.schedule_task(hello3, "5", username="laibuta")
         await timemachine.step(datetime.timedelta(seconds=1))
         ctx.shutdown()
         await task
         await timemachine.unwind()
 
-    counter.execute.assert_has_calls(
+    counter.task1.execute.assert_has_calls(
         [call("rajeev"), call("jeethu"), call("default")], any_order=True
     )
+    counter.task2.execute.assert_has_calls([call("imaana")], any_order=True)
+    counter.task3.execute.assert_has_calls([call("laibuta")], any_order=True)
+
+
+@pytest.mark.asyncio
+async def test_execute_at(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        await asyncio.gather(
+            ctx.schedule_task(
+                hello, "1", execute_at=now + datetime.timedelta(seconds=1)
+            ),
+            ctx.schedule_task(
+                hello, "2", execute_at=now + datetime.timedelta(seconds=2)
+            ),
+            ctx.schedule_task(
+                hello, "3", execute_at=now + datetime.timedelta(seconds=3)
+            ),
+        )
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_execute_at_retry(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task(failure_mode=FailureMode.UNLOCK)
+    async def hello(context: Context) -> None:
+        getattr(counter, context.task.name).execute()
+        raise RuntimeError("Oops")
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        await asyncio.gather(
+            ctx.schedule_task(
+                hello, "task1", execute_at=now + datetime.timedelta(seconds=1)
+            ),
+            ctx.schedule_task(
+                hello, "task2", execute_at=now + datetime.timedelta(seconds=2)
+            ),
+            ctx.schedule_task(
+                hello, "task3", execute_at=now + datetime.timedelta(seconds=3)
+            ),
+        )
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=5))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.task1.execute.call_count == 5
+    assert counter.task2.execute.call_count == 4
+    assert counter.task3.execute.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_execute_at_at_most_once(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task(execution_mode=ExecutionMode.AT_MOST_ONCE)
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        await asyncio.gather(
+            ctx.schedule_task(
+                hello, "1", execute_at=now + datetime.timedelta(seconds=1)
+            ),
+            ctx.schedule_task(
+                hello, "2", execute_at=now + datetime.timedelta(seconds=2)
+            ),
+            ctx.schedule_task(
+                hello, "3", execute_at=now + datetime.timedelta(seconds=3)
+            ),
+        )
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 3

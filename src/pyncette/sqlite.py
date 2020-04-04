@@ -77,7 +77,9 @@ class SqliteRepository(Repository):
                 """
             )
 
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+    async def poll_dynamic_task(
+        self, utc_now: datetime.datetime, task: Task
+    ) -> QueryResponse:
         async with self._transaction(explicit_begin=True):
             locked_by = uuid.uuid4()
             locked_until = utc_now + task.lease_duration
@@ -92,8 +94,8 @@ class SqliteRepository(Repository):
             )
 
             concrete_tasks = [
-                task.instantiate_from_spec(json.loads(task_data["task_spec"]))
-                for task_data in ready_tasks
+                task.instantiate_from_spec(json.loads(record["task_spec"]))
+                for record in ready_tasks
             ]
 
             await self._connection.executemany(
@@ -124,12 +126,12 @@ class SqliteRepository(Repository):
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction(explicit_begin=True):
             assert task.parent_task is not None
-            task_data = await self._connection.execute_fetchall(
+            record = await self._connection.execute_fetchall(
                 f"SELECT 1 FROM {self._table_name} WHERE name = ?",
                 (task.canonical_name,),
             )
 
-            if task_data:
+            if record:
                 await self._connection.execute_fetchall(
                     f"""
                     UPDATE {self._table_name}
@@ -176,12 +178,12 @@ class SqliteRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
         async with self._transaction(explicit_begin=True):
-            task_data = await self._connection.execute_fetchall(
+            record = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = ?",
                 (task.canonical_name,),
             )
 
-            if not task_data:
+            if not record:
                 # Regular (non-dynamic) tasks will be implicitly created on first poll,
                 # but dynamic task instances must be explicitely created to prevent spurious
                 # poll from re-creating them after being deleted.
@@ -199,14 +201,14 @@ class SqliteRepository(Repository):
                     (task.canonical_name, _to_timestamp(execute_after)),
                 )
             else:
-                record = task_data[0]
+                record = record[0]
                 execute_after = cast(
                     datetime.datetime, _from_timestamp(record["execute_after"])
                 )
                 locked_until = _from_timestamp(record["locked_until"])
                 locked_by = record["locked_by"]
 
-            # We need the original scheduled date for later
+            assert execute_after is not None
             scheduled_at = execute_after
 
             if (
@@ -247,16 +249,16 @@ class SqliteRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         async with self._transaction(explicit_begin=True):
-            task_data = await self._connection.execute_fetchall(
+            record = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = $1",
                 (task.canonical_name,),
             )
 
-            if not task_data:
+            if not record:
                 logger.warning(f"Task {task} not found, skipping.")
                 return
 
-            record = task_data[0]
+            record = record[0]
             if record["locked_by"] != str(lease):
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
@@ -269,7 +271,7 @@ class SqliteRepository(Repository):
                 else None
             )
             await self._update_record(
-                task, None, None, task.get_next_execution(utc_now, execute_after,),
+                task, None, None, task.get_next_execution(utc_now, execute_after),
             )
 
     async def unlock_task(
@@ -294,22 +296,28 @@ class SqliteRepository(Repository):
         locked_by: Optional[uuid.UUID],
         execute_after: Optional[datetime.datetime],
     ) -> None:
-        await self._connection.execute_fetchall(
-            f"""
-            UPDATE {self._table_name}
-            SET
-                locked_until = :locked_until,
-                locked_by = :locked_by,
-                execute_after = :execute_after
-            WHERE name = :name
-            """,
-            {
-                "name": task.canonical_name,
-                "locked_until": _to_timestamp(locked_until),
-                "locked_by": str(locked_by),
-                "execute_after": _to_timestamp(execute_after),
-            },
-        )
+        if execute_after is None:
+            await self._connection.execute_fetchall(
+                f"DELETE FROM {self._table_name} WHERE name = $1",
+                (task.canonical_name,),
+            )
+        else:
+            await self._connection.execute_fetchall(
+                f"""
+                UPDATE {self._table_name}
+                SET
+                    locked_until = :locked_until,
+                    locked_by = :locked_by,
+                    execute_after = :execute_after
+                WHERE name = :name
+                """,
+                {
+                    "name": task.canonical_name,
+                    "locked_until": _to_timestamp(locked_until),
+                    "locked_by": str(locked_by),
+                    "execute_after": _to_timestamp(execute_after),
+                },
+            )
 
     @contextlib.asynccontextmanager
     async def _transaction(self, explicit_begin: bool = False) -> AsyncIterator[None]:

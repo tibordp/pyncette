@@ -1,7 +1,7 @@
-pyncette.scheduler module
-=========================
+pyncette.executor module
+========================
 
-.. automodule:: pyncette.scheduler
+.. automodule:: pyncette.executor
    :members:
    :undoc-members:
    :show-inheritance:
