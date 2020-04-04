@@ -87,12 +87,14 @@ class MeteredRepository(Repository):
         self._metric_set = metric_set
         self._inner = inner_repository
 
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+    async def poll_dynamic_task(
+        self, utc_now: datetime.datetime, task: Task
+    ) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
         async with self._metric_set.measure(
-            operation="query_task", **_get_task_labels(task)
+            operation="poll_dynamic_task", **_get_task_labels(task)
         ):
-            return await self._inner.query_task(utc_now, task)
+            return await self._inner.poll_dynamic_task(utc_now, task)
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""

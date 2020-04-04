@@ -12,7 +12,7 @@ from typing import Type
 logger = logging.getLogger(__name__)
 
 
-class DefaultScheduler(contextlib.AbstractAsyncContextManager):
+class DefaultExecutor(contextlib.AbstractAsyncContextManager):
     """Manages the spawned tasks running in background"""
 
     _tasks: Dict[object, asyncio.Task]
@@ -22,7 +22,7 @@ class DefaultScheduler(contextlib.AbstractAsyncContextManager):
         self._tasks = dict()
         self._semaphore = asyncio.Semaphore(concurrency_limit)
 
-    async def __aenter__(self) -> DefaultScheduler:
+    async def __aenter__(self) -> DefaultExecutor:
         return self
 
     async def __aexit__(

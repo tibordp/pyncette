@@ -27,6 +27,7 @@ class Task:
     task_func: TaskFunc
     schedule: Optional[str]
     interval: Optional[datetime.timedelta]
+    execute_at: Optional[datetime.datetime]
     timezone: Optional[str]
     fast_forward: bool
     failure_mode: FailureMode
@@ -43,6 +44,7 @@ class Task:
         parent_task: "Task" = None,
         schedule: Optional[str] = None,
         interval: Optional[datetime.timedelta] = None,
+        execute_at: Optional[datetime.datetime] = None,
         timezone: Optional[str] = None,
         fast_forward: bool = False,
         failure_mode: FailureMode = FailureMode.NONE,
@@ -61,6 +63,7 @@ class Task:
         self.timezone = timezone
         self.fast_forward = fast_forward
         self.failure_mode = failure_mode
+        self.execute_at = execute_at
         self.execution_mode = execution_mode
         self.lease_duration = lease_duration
         self.extra_args = kwargs
@@ -77,25 +80,24 @@ class Task:
             )
 
         if not self.dynamic:
-            if self.schedule is not None and self.interval is not None:
-                raise ValueError("schedule and interval are mutually exclusive")
-            if self.schedule is None and self.interval is None:
-                raise ValueError("One of schedule or interval must be specified")
+            schedule_specs = [
+                spec
+                for spec in [self.schedule, self.interval, self.execute_at]
+                if spec is not None
+            ]
+            if len(schedule_specs) != 1:
+                raise ValueError(
+                    "Exactly one of the following must be specified: schedule, interval, execute_at"
+                )
             if self.schedule is None and self.timezone is not None:
                 raise ValueError(
                     "Timezone may only be specified when cron schedule is used"
                 )
             if self.schedule is not None:
                 croniter.expand(self.schedule)
-        else:
-            if self.schedule is not None or self.interval is not None:
-                raise ValueError(
-                    "Schedule may not be specified on dynamic task definitions."
-                )
-            if self.timezone is not None:
-                raise ValueError(
-                    f"Timezone may not be specified on dynamic task definitions."
-                )
+
+        if self.parent_task is None and self.execute_at is not None:
+            raise ValueError("execute_at is only supported for dynamic tasks")
 
         if dateutil.tz.gettz(self.timezone) is None:
             raise ValueError(f"Invalid timezone specifier '{self.timezone}'.")
@@ -127,7 +129,13 @@ class Task:
 
     def get_next_execution(
         self, utc_now: datetime.datetime, last_execution: Optional[datetime.datetime],
-    ) -> datetime.datetime:
+    ) -> Optional[datetime.datetime]:
+        if self.execute_at is not None:
+            return (
+                self.execute_at.astimezone(dateutil.tz.UTC)
+                if last_execution is None
+                else None
+            )
         for run in self._get_future_runs(utc_now, last_execution):
             utc_run = run.astimezone(dateutil.tz.UTC)
             if not self.fast_forward or utc_run >= utc_now:
@@ -141,6 +149,15 @@ class Task:
         if not self.dynamic:
             raise ValueError("Cannot instantiate a non-dynamic task")
 
+        extra_args: Dict[str, Any] = {
+            "schedule": self.schedule,
+            "interval": self.interval,
+            "timezone": self.timezone,
+            "execute_at": self.execute_at,
+            **self.extra_args,
+            **kwargs,
+        }
+
         return Task(
             name=name,
             func=self.task_func,
@@ -149,7 +166,7 @@ class Task:
             execution_mode=self.execution_mode,
             lease_duration=self.lease_duration,
             parent_task=self,
-            **{**self.extra_args, **kwargs},
+            **extra_args,
         )
 
     @property
@@ -170,6 +187,9 @@ class Task:
             "interval": self.interval.total_seconds()
             if self.interval is not None
             else None,
+            "execute_at": self.execute_at.isoformat()
+            if self.execute_at is not None
+            else None,
             "timezone": self.timezone,
             "extra_args": self.extra_args,
         }
@@ -183,6 +203,9 @@ class Task:
             if task_spec["interval"] is not None
             else None,
             timezone=task_spec["timezone"],
+            execute_at=datetime.datetime.fromisoformat(task_spec["execute_at"])
+            if task_spec["execute_at"] is not None
+            else None,
             **task_spec["extra_args"],
         )
 

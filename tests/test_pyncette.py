@@ -10,63 +10,42 @@ from pyncette import Pyncette
 
 
 def test_invalid_configuration():
-    app = Pyncette()
+    async def dummy(context: Context):
+        pass
 
-    with pytest.raises(
-        ValueError, match="One of schedule or interval must be specified"
-    ):
+    # Exactly one of the following must be specified: schedule, interval, execute_at
+    with pytest.raises(ValueError):
+        app = Pyncette()
+        app.task()(dummy)
 
-        @app.task()
-        def _dummy1(context: Context):
-            pass
+    with pytest.raises(ValueError):
+        app = Pyncette()
+        app.task(execute_at=datetime.datetime.utcnow())(dummy)
 
-    with pytest.raises(
-        ValueError, match="schedule and interval are mutually exclusive"
-    ):
+    with pytest.raises(ValueError):
+        app = Pyncette()
+        app.task(interval=datetime.timedelta(seconds=2), schedule="* * * * *")(dummy)
 
-        @app.task(interval=datetime.timedelta(seconds=2), schedule="* * * * *")
-        def _dummy2(context: Context):
-            pass
-
-    with pytest.raises(ValueError, match="Duplicate task name task1"):
-
-        @app.task(interval=datetime.timedelta(seconds=2), name="task1")
-        def _dummy3(context: Context):
-            pass
-
-        @app.task(interval=datetime.timedelta(seconds=2), name="task1")
-        def _dummy4(context: Context):
-            pass
+    with pytest.raises(ValueError, match="Duplicate task name"):
+        app = Pyncette()
+        app.task(interval=datetime.timedelta(seconds=2), name="task1")(dummy)
+        app.task(interval=datetime.timedelta(seconds=2), name="task1")(dummy)
 
     with pytest.raises(CroniterBadCronError):
-
-        @app.task(schedule="abracadabra")
-        def _dummy5(context: Context):
-            pass
+        app = Pyncette()
+        app.task(schedule="abracadabra")(dummy)
 
     with pytest.raises(
         ValueError,
         match="failure_mode is not applicable when execution_mode is AT_MOST_ONCE",
     ):
-
-        @app.task(
+        app = Pyncette()
+        app.task(
             execution_mode=ExecutionMode.AT_MOST_ONCE, failure_mode=FailureMode.UNLOCK
-        )
-        def _dummy6(context: Context):
-            pass
+        )(dummy)
 
     with pytest.raises(
         ValueError, match="Invalid timezone specifier 'Gondwana/Atlantis'."
     ):
-
-        @app.task(schedule="* * * * *", timezone="Gondwana/Atlantis")
-        def _dummy7(context: Context):
-            pass
-
-    with pytest.raises(
-        ValueError, match="Schedule may not be specified on dynamic task definitions"
-    ):
-
-        @app.dynamic_task(schedule="* * * * *")
-        def _dummy8(context: Context):
-            pass
+        app = Pyncette()
+        app.task(schedule="* * * * *", timezone="Gondwana/Atlantis")(dummy)

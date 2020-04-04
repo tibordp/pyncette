@@ -42,7 +42,7 @@ default_context:
     linter:                    'flake8'
     package_name:              'pyncette'
     project_name:              'Pyncette'
-    project_short_description: 'A reliable distributed cron with pluggable storage backends'
+    project_short_description: 'A reliable distributed scheduler with pluggable storage backends'
     pypi_badge:                'yes'
     pypi_disable_upload:       'no'
     release_date:              'today'

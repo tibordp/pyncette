@@ -19,7 +19,9 @@ class Repository(abc.ABC):
     """Abstract base class representing a store for Pyncette tasks"""
 
     @abc.abstractmethod
-    async def query_task(self, utc_now: datetime.datetime, task: Task) -> QueryResponse:
+    async def poll_dynamic_task(
+        self, utc_now: datetime.datetime, task: Task
+    ) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
 
     @abc.abstractmethod
