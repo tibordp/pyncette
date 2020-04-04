@@ -25,6 +25,7 @@ from typing import Tuple
 import coloredlogs
 import dateutil.tz
 
+from .executor import DefaultExecutor
 from .model import Context
 from .model import Decorator
 from .model import ExecutionMode
@@ -37,7 +38,6 @@ from .model import ResultType
 from .model import TaskFunc
 from .repository import Repository
 from .repository import RepositoryFactory
-from .executor import DefaultExecutor
 from .sqlite import sqlite_repository
 from .task import Task
 

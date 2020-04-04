@@ -1,8 +1,9 @@
 """
 
-This example [ab]uses Pyncette to implement a reliable delay queue. 
+This example uses Pyncette to implement a reliable delay queue. 
 
-This example should uphold all the guarantees one would expect from a reliable distributed queue.
+After the task instance suceeds it will not be scheduled again as with recurrent tasks, however, 
+if an exception is raised, it will be retried if ExecutionMode.AT_LEAST_ONCE is used.
 
 """
 
@@ -13,8 +14,8 @@ import random
 import uuid
 
 from pyncette import Context
-from pyncette import FailureMode
 from pyncette import ExecutionMode
+from pyncette import FailureMode
 from pyncette import Pyncette
 from pyncette.redis import redis_repository
 
