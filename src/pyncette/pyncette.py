@@ -21,6 +21,7 @@ from typing import List
 from typing import Optional
 from typing import Sequence
 from typing import Tuple
+from typing import Type
 
 import coloredlogs
 import dateutil.tz
@@ -228,21 +229,21 @@ class Pyncette:
     _middlewares: List[MiddlewareFunc]
     _repository_factory: RepositoryFactory
     _poll_interval: datetime.timedelta
-    _concurrency_limit: int
+    _executor_cls: Type
     _configuration: Dict[str, Any]
 
     def __init__(
         self,
         repository_factory: RepositoryFactory = sqlite_repository,
+        executor_cls: Type = DefaultExecutor,
         poll_interval: datetime.timedelta = datetime.timedelta(seconds=1),
-        concurrency_limit: int = 100,
         **kwargs: Any,
     ) -> None:
         self._tasks = []
         self._fixtures = []
         self._middlewares = []
         self._poll_interval = poll_interval
-        self._concurrency_limit = concurrency_limit
+        self._executor_cls = executor_cls
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
@@ -310,8 +311,8 @@ class Pyncette:
         """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration
-        ) as repository, DefaultExecutor(
-            self._concurrency_limit
+        ) as repository, self._executor_cls(
+            **self._configuration
         ) as executor, contextlib.AsyncExitStack() as stack:
             root_context = await self._create_root_context(repository, stack)
 
