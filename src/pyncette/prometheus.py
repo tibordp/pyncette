@@ -140,8 +140,8 @@ class MeteredRepository(Repository):
 
 _task_metric_set = OperationMetricSet("tasks", TASK_LABELS)
 _task_staleness = Histogram(
-    f"pyncette_tasks_staleness_seconds",
-    f"Histogram of staleness of task executions (difference between scheduled and actual time)",
+    "pyncette_tasks_staleness_seconds",
+    "Histogram of staleness of task executions (difference between scheduled and actual time)",
     TASK_LABELS,
     buckets=(
         0.05,
