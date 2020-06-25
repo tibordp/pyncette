@@ -27,5 +27,8 @@ jobs:
         python -m pip install --upgrade pip
         pip install tox
     - name: Run Tox
+      env:
+        TOXPYTHON: python
+        TOXENV: ${{ matrix.environment['toxenv'] }}
       run: |
-        python -m tox -e ${{ matrix.environment['toxenv'] }}
+        python -m tox
