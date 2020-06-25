@@ -32,7 +32,6 @@ jobs:
         pip install tox
     - name: Run Tox
       env:
-        TOXPYTHON: python
         TOXENV: ${{ matrix.environment['toxenv'] }}
       run: |
         python -m tox
@@ -82,7 +81,6 @@ jobs:
         pip install tox
     - name: Run Tox
       env:
-        TOXPYTHON: python
         POSTGRES_URL: postgres://postgres:postgres@localhost/postgres
         TOXENV: ${{ matrix.environment['toxenv'] }}
       run: |
