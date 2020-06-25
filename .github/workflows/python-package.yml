@@ -12,16 +12,16 @@ jobs:
     strategy:
       matrix:
         environment:
-          - python_version: 3.8
+          - python-version: 3.8
             toxenv: py38
-          - python_version: 3.7
-            toxenv: py37            
+          - python-version: 3.7
+            toxenv: py37    
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.environment['python_version'] }}
+    - name: Set up Python ${{ matrix.environment['python-version'] }}
       uses: actions/setup-python@v2
       with:
-        python-version: ${{ matrix.environment['python_version'] }}
+        python-version: ${{ matrix.environment['python-version'] }}
     - name: Install tox
       run: |
         python -m pip install --upgrade pip
@@ -32,3 +32,43 @@ jobs:
         TOXENV: ${{ matrix.environment['toxenv'] }}
       run: |
         python -m tox
+  integration:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment:
+          - python-version: 3.8
+            toxenv: integration
+    services:
+      postgres:
+        # Docker Hub image
+        image: postgres
+        # Provide the password for postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432           
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python ${{ matrix.environment['python-version'] }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.environment['python-version'] }}
+    - name: Install tox
+      run: |
+        python -m pip install --upgrade pip
+        pip install tox
+    - name: Run Tox
+      env:
+        TOXPYTHON: python
+        POSTGRES_URL: postgres://postgres:postgres@localhost/postgres
+        TOXENV: ${{ matrix.environment['toxenv'] }}
+      run: |
+        python -m tox
+        
