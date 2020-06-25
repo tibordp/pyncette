@@ -61,7 +61,7 @@ default_context:
     test_matrix_configurator:  'no'
     test_matrix_separate_coverage: 'no'
     test_runner:               'pytest'
-    travis:                    'yes'
+    travis:                    'no'
     travis_osx:                'no'
     version:                   '0.0.0'
     website:                   'https://www.ojdip.net'

@@ -10,7 +10,7 @@ Overview
     * - docs
       - |docs|
     * - tests
-      - | |travis|
+      - | |github-ci|
         |
     * - package
       - | |version| |wheel| |supported-versions| |supported-implementations|
@@ -19,9 +19,9 @@ Overview
     :target: https://readthedocs.org/projects/pyncette
     :alt: Documentation Status
 
-.. |travis| image:: https://api.travis-ci.org/tibordp/pyncette.svg?branch=master
-    :alt: Travis-CI Build Status
-    :target: https://travis-ci.org/tibordp/pyncette
+.. |github-ci| image:: https://github.com/tibordp/pyncette/workflows/Python%20package/badge.svg?branch=master
+    :alt: Github Actions Build Status
+    :target: https://github.com/tibordp/pyncette/actions?query=branch%3Amaster+workflow%3A%22Python+package%22
 
 .. |version| image:: https://img.shields.io/pypi/v/pyncette.svg
     :alt: PyPI Package latest release
