@@ -112,6 +112,9 @@ Persistent distributed cron using Redis (coordinates execution with parallel ins
         app.main()
 
 
+See the `examples` directory for more examples of usage.
+
+
 Development
 ===========
 
