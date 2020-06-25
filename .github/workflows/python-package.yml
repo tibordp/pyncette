@@ -18,17 +18,17 @@ jobs:
             toxenv: py37            
     steps:
     - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.environment['python-version'] }}
+    - name: Set up Python ${{ matrix.environment['python_version'] }}
       uses: actions/setup-python@v2
       with:
-        python-version: ${{ matrix.environment['python-version'] }}
+        python-version: ${{ matrix.environment['python_version'] }}
     - name: Install tox
       run: |
-        python3 -m pip install --upgrade pip
-        python3 -m pip install tox
+        python -m pip install --upgrade pip
+        pip install tox
     - name: Run Tox
       env:
-        TOXPYTHON: python3
+        TOXPYTHON: python
         TOXENV: ${{ matrix.environment['toxenv'] }}
       run: |
-        python3 -m tox
+        python -m tox
