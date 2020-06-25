@@ -194,7 +194,7 @@ class RedisRepository(Repository):
             task._last_lease = response  # type: ignore
 
             if response.result == ResultType.LEASE_MISMATCH:
-                logger.debug(f"Lease mismatch, retrying.")
+                logger.debug("Lease mismatch, retrying.")
                 execute_after = response.execute_after
                 version = response.version
             elif response.result == ResultType.MISSING:
