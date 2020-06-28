@@ -18,6 +18,8 @@ from .model import Context
 from .model import Lease
 from .model import PollResponse
 from .model import QueryResponse
+from .pyncette import Pyncette
+from .pyncette import PyncetteContext
 from .pyncette import _current_time
 from .repository import Repository
 from .repository import RepositoryFactory
@@ -64,9 +66,13 @@ class OperationMetricSet:
     @contextlib.asynccontextmanager
     async def measure(self, **labels: Dict[str, str]) -> AsyncIterator[None]:
         """An async context manager that measures the execution of the wrapped code"""
+        if labels:
+            self.requests_in_progress.labels(**labels).inc()
+            self.requests.labels(**labels).inc()
+        else:
+            self.requests_in_progress.inc()
+            self.requests.inc()
 
-        self.requests_in_progress.labels(**labels).inc()
-        self.requests.labels(**labels).inc()
         before_time = time.perf_counter()
         try:
             yield
@@ -74,10 +80,14 @@ class OperationMetricSet:
             self.exceptions.labels(**labels, exception_type=type(e).__name__).inc()
             raise e from None
         finally:
-            self.requests_duration.labels(**labels).observe(
-                time.perf_counter() - before_time
-            )
-            self.requests_in_progress.labels(**labels).dec()
+            if labels:
+                self.requests_duration.labels(**labels).observe(
+                    time.perf_counter() - before_time
+                )
+                self.requests_in_progress.labels(**labels).dec()
+            else:
+                self.requests_duration.observe(time.perf_counter() - before_time)
+                self.requests_in_progress.dec()
 
 
 class MeteredRepository(Repository):
@@ -182,8 +192,12 @@ _repository_metric_set = OperationMetricSet(
     "repository_ops", ["operation", *TASK_LABELS]
 )
 
+_ticks_metric_set = OperationMetricSet("ticks", [])
 
-def prometheus_repository(repository_factory: RepositoryFactory) -> RepositoryFactory:
+
+def with_prometheus_repository(
+    repository_factory: RepositoryFactory,
+) -> RepositoryFactory:
     """Wraps the repository factory into one that exposes the metrics via Prometheus"""
 
     @contextlib.asynccontextmanager
@@ -192,3 +206,35 @@ def prometheus_repository(repository_factory: RepositoryFactory) -> RepositoryFa
             yield MeteredRepository(_repository_metric_set, inner_repository)
 
     return _repository_factory
+
+
+async def prometheus_fixture(app_context: PyncetteContext) -> AsyncIterator[None]:
+    tick_func = app_context._tick
+
+    async def _metered_tick(*args: Any, **kwargs: Any) -> Any:
+        async with _ticks_metric_set.measure():
+            return await tick_func(*args, **kwargs)
+
+    app_context._tick = _metered_tick  # type: ignore
+    yield
+
+
+def use_prometheus(
+    app: Pyncette,
+    measure_repository: bool = True,
+    measure_ticks: bool = True,
+    measure_tasks: bool = True,
+) -> None:
+    """
+    Decorate Pyncette app with Prometheus metric exporter.
+
+    :param measure_repository: Whether to measure repository operations
+    :param measure_ticks: Whether to measure ticks
+    :param measure_tasks: Whether to measure individual task executions
+    """
+    if measure_repository:
+        app._repository_factory = with_prometheus_repository(app._repository_factory)
+    if measure_ticks:
+        app.use_fixture("_prometheus", prometheus_fixture)
+    if measure_tasks:
+        app.use_middleware(prometheus_middleware)

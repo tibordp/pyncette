@@ -8,19 +8,14 @@ from prometheus_client import generate_latest
 
 from pyncette import Context
 from pyncette import Pyncette
-from pyncette.prometheus import prometheus_middleware
-from pyncette.prometheus import prometheus_repository
+from pyncette.prometheus import use_prometheus
 from pyncette.sqlite import sqlite_repository
 
 
 @pytest.mark.asyncio
 async def test_successful_task_interval(timemachine):
-    app = Pyncette(
-        repository_factory=prometheus_repository(
-            wrap_factory(sqlite_repository, timemachine)
-        )
-    )
-    app.middleware(prometheus_middleware)
+    app = Pyncette(repository_factory=wrap_factory(sqlite_repository, timemachine))
+    use_prometheus(app)
 
     counter = MagicMock()
 

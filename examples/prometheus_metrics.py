@@ -3,6 +3,10 @@
 Pyncette ships with an optional Prometheus instrumentation based on the official prometheus_client
 Python package. It includes the following metrics:
 
+- Tick duration [Histogram]
+- Tick volume [Counter]
+- Tick failures [Counter]
+- Number of currently executing ticks [Gauge]
 - Task duration [Histogram]
 - Task volume [Counter]
 - Task failures [Counter]
@@ -33,14 +37,12 @@ from prometheus_client import start_http_server
 from pyncette import Context
 from pyncette import FailureMode
 from pyncette import Pyncette
-from pyncette.prometheus import prometheus_middleware
-from pyncette.prometheus import prometheus_repository
-from pyncette.sqlite import sqlite_repository
+from pyncette.prometheus import use_prometheus
 
 logger = logging.getLogger(__name__)
 
-app = Pyncette(repository_factory=prometheus_repository(sqlite_repository))
-app.middleware(prometheus_middleware)
+app = Pyncette()
+use_prometheus(app)
 
 
 @app.task(schedule="* * * * * */2")
