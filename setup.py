@@ -71,15 +71,16 @@ setup(
     ],
     python_requires=">=3.7",
     install_requires=[
-        "typing-extensions>=3.7.4.1",
-        "croniter>=0.3.31",
-        "aiosqlite>=0.11.0",
+        "typing-extensions>=3.7.4.2",
+        "croniter>=0.3.34",
+        "aiosqlite>=0.13.0",
+        "aiohttp>=3.6.2",
         "python-dateutil",
         "coloredlogs",
     ],
     extras_require={
         "redis": ["aioredis>=1.3.1"],
-        "prometheus": ["prometheus_client>=0.7.1"],
+        "prometheus": ["prometheus_client>=0.8.0"],
         "postgres": ["asyncpg>=0.20.1"],
     },
 )

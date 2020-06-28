@@ -12,6 +12,7 @@ from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
+from pyncette import PyncetteContext
 from pyncette.errors import PyncetteException
 
 
@@ -311,7 +312,7 @@ async def test_fixture(timemachine, backend):
     counter = MagicMock()
 
     @app.fixture()
-    async def hello():
+    async def hello(app_context: PyncetteContext):
         counter.entered()
         yield counter.executed
         counter.exited()

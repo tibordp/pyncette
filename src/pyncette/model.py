@@ -44,7 +44,7 @@ class MiddlewareFunc(Protocol):
 
 
 class FixtureFunc(Protocol):
-    def __call__(self) -> AsyncIterator[Any]:
+    def __call__(self, app_context: "pyncette.PyncetteContext") -> AsyncIterator[Any]:
         "Executes the fixture"
 
 
@@ -92,3 +92,4 @@ class QueryResponse:
 
 if TYPE_CHECKING:
     import pyncette.task
+    import pyncette

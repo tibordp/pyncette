@@ -14,6 +14,7 @@ Submodules
    pyncette.redis
    pyncette.repository
    pyncette.executor
+   pyncette.healthcheck
    pyncette.sqlite
    pyncette.task
    

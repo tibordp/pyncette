@@ -32,8 +32,8 @@ If Pyncette is run alongside other code or for customization, :meth:`~pyncette.P
 
     ...
     
-    async with app.create() as ctx:
-        await ctx.run()
+    async with app.create() as app_context:
+        await app_context.run()
 
 Specifying the schedule
 -----------------------
@@ -119,8 +119,6 @@ Pyncette is timezone-aware, the timezone for a task can be specified by ``timezo
 
 The accepted values are all that :meth:`dateutil.tz.gettz` accepts. 
 
-.. caution:: There is a known issue where the execution is offset by 1 hour in the day DST takes effect. See `details here <https://github.com/taichino/croniter/issues/116>`_
-
 Task parameters
 ++++++++++++++++
 
@@ -152,7 +150,7 @@ If you have common logic that should execute around every task invocation, middl
     
     @app.middleware
     async def retry(context: Context, next: Callable[[], Awaitable[None]]):
-        # Prefer to rely on Pyncette to drive task retry logic
+        # Example only, prefer to rely on Pyncette to drive task retry logic
         for _ in range(5):
             try:
                 await next()
@@ -191,7 +189,7 @@ Fixtures provide a convenient way for injecting dependencies into tasks, and spe
     app = Pyncette()
 
     @app.fixture()
-    async def db():
+    async def db(app_context: PyncetteContext):
         db = await database.connect(...)
         try:
             yield db
@@ -199,7 +197,7 @@ Fixtures provide a convenient way for injecting dependencies into tasks, and spe
             await db.close()
 
     @app.fixture(name="super_log_file")
-    async def logfile():
+    async def logfile(app_context: PyncetteContext):
         with open("log.txt", "a") as file:
             yield file
 
@@ -285,13 +283,13 @@ Pyncette supports a use case where the tasks are not necessarily known in advanc
     async def hello(context: Context) -> None:
         print(f"Hello {context.args['username']}")
 
-    async with app.create() as ctx:
+    async with app.create() as app_context:
         await asyncio.gather(
-            ctx.schedule_task(hello, "bill_task", schedule="0 * * * *", username="bill"),
-            ctx.schedule_task(hello, "steve_task", schedule="20 * * * *", username="steve"),
-            ctx.schedule_task(hello, "john_task", schedule="40 * * * *", username="john"),
+            app_context.schedule_task(hello, "bill_task", schedule="0 * * * *", username="bill"),
+            app_context.schedule_task(hello, "steve_task", schedule="20 * * * *", username="steve"),
+            app_context.schedule_task(hello, "john_task", schedule="40 * * * *", username="john"),
         )
-        await ctx.run()
+        await app_context.run()
 
 When persistence is used, the schedules and task parameters of the are persisted alongside the execution data, which allows the tasks to be registered and unregistered at will. 
 
@@ -303,10 +301,10 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
 
     ...
 
-    async with app.create() as ctx:
-        await ctx.schedule_task(hello, "bill_task", schedule="0 * * * *", username="bill")
-        await ctx.unschedule_task(hello, "bill_task")
-        await ctx.run()
+    async with app.create() as app_context:
+        await app_context.schedule_task(hello, "bill_task", schedule="0 * * * *", username="bill")
+        await app_context.unschedule_task(hello, "bill_task")
+        await app_context.run()
 
 .. note::
 
@@ -331,13 +329,13 @@ Dynamic tasks can also be scheduled to execute only once at a specific date.
     async def task(context: Context) -> None:
         print(f"Hello {context.task.name}!")
 
-    async with app.create() as ctx:
-        await ctx.schedule_task(task, "y2k38", execute_at=datetime(2038, 1, 19, 3, 14, 7));
-        await ctx.schedule_task(task, "tomorrow", execute_at=datetime.now() + timedelta(days=1));
+    async with app.create() as app_context:
+        await app_context.schedule_task(task, "y2k38", execute_at=datetime(2038, 1, 19, 3, 14, 7));
+        await app_context.schedule_task(task, "tomorrow", execute_at=datetime.now() + timedelta(days=1));
         
         # This will execute once immediately, since it is already overdue
-        await ctx.schedule_task(task, "overdue", execute_at=datetime.now() - timedelta(days=1));
-        await ctx.run()
+        await app_context.schedule_task(task, "overdue", execute_at=datetime.now() - timedelta(days=1));
+        await app_context.run()
 
 Once-off tasks have the same reliability guarantees as recurrent tasks, which is controlled by `execution_mode` and `failure_mode` parameters, but in case of success, they will not be scheduled again.
 

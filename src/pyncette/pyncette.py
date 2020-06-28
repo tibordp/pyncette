@@ -26,6 +26,7 @@ from typing import Type
 import coloredlogs
 import dateutil.tz
 
+from .errors import PyncetteException
 from .executor import DefaultExecutor
 from .model import Context
 from .model import Decorator
@@ -56,22 +57,24 @@ class PyncetteContext:
 
     _app: Pyncette
     _repository: Repository
-    _root_context: Context
+    _root_context: Optional[Context]
     _executor: DefaultExecutor
     _shutting_down: asyncio.Event
+    _last_tick: Optional[datetime.datetime]
 
     def __init__(
-        self,
-        app: Pyncette,
-        repository: Repository,
-        executor: DefaultExecutor,
-        root_context: Context,
+        self, app: Pyncette, repository: Repository, executor: DefaultExecutor
     ):
         self._repository = repository
         self._executor = executor
-        self._root_context = root_context
         self._app = app
+        self._root_context = None
+        self._last_tick = None
         self._shutting_down = asyncio.Event()
+
+    def initialize(self, root_context: Context) -> None:
+        self._root_context = root_context
+        self._last_tick = _current_time()
 
     async def schedule_task(
         self, task: Task, instance_name: str, **kwargs: Any
@@ -103,8 +106,9 @@ class PyncetteContext:
         await self._repository.unregister_task(utc_now, concrete_task)
 
     def _populate_context(self, task: Task, poll_response: PollResponse) -> Context:
+        assert self._root_context is not None
+
         context = copy.copy(self._root_context)
-        context.app_context = self
         context.task = task
         tz = (
             dateutil.tz.UTC
@@ -164,6 +168,10 @@ class PyncetteContext:
             else:
                 yield (task, None)
 
+    @property
+    def last_tick(self) -> Optional[datetime.datetime]:
+        return self._last_tick
+
     async def _tick(self, tasks: Sequence[Task]) -> None:
         utc_now = _current_time()
 
@@ -186,9 +194,14 @@ class PyncetteContext:
                     f"Unexpected poll response for {task}: {poll_response.result}"
                 )
 
+        self._last_tick = utc_now
+
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
         # Tasks are frozen for the duration of the main loop
+        if self._root_context is None:
+            raise PyncetteException("Context is not yet initialized")
+
         tasks = collections.deque(self._app._tasks)
 
         while not self._shutting_down.is_set():
@@ -286,15 +299,19 @@ class Pyncette:
             if task.name == name:
                 raise ValueError(f"Duplicate task name {name}")
 
+    def use_fixture(self, fixture_name: str, func: FixtureFunc) -> None:
+        self._fixtures.append((fixture_name, contextlib.asynccontextmanager(func)))
+
+    def use_middleware(self, func: MiddlewareFunc) -> None:
+        self._middlewares.append(func)
+
     def fixture(self, name: Optional[str] = None) -> Decorator[FixtureFunc]:
         """Decorator for marking the generator as a fixture"""
 
         def _func(func: FixtureFunc) -> FixtureFunc:
             fixture_name = name or getattr(func, "__name__", None)
             if fixture_name is not None:
-                self._fixtures.append(
-                    (fixture_name, contextlib.asynccontextmanager(func))
-                )
+                self.use_fixture(fixture_name, func)
             else:
                 raise ValueError("Unable to determine name for the fixture")
             return func
@@ -314,9 +331,10 @@ class Pyncette:
         ) as repository, self._executor_cls(
             **self._configuration
         ) as executor, contextlib.AsyncExitStack() as stack:
-            root_context = await self._create_root_context(repository, stack)
-
-            yield PyncetteContext(self, repository, executor, root_context)
+            app_context = PyncetteContext(self, repository, executor)
+            root_context = await self._create_root_context(app_context, stack)
+            app_context.initialize(root_context)
+            yield app_context
 
     def _setup_signal_handler(self, context: PyncetteContext) -> None:
         def handler(signum: Any, frame: Any) -> None:
@@ -328,14 +346,19 @@ class Pyncette:
                 sys.exit(1)
 
         signal.signal(signal.SIGINT, handler)
+        signal.signal(signal.SIGTERM, handler)
 
     async def _create_root_context(
-        self, repository: Repository, stack: contextlib.AsyncExitStack
+        self, app_context: PyncetteContext, stack: contextlib.AsyncExitStack
     ) -> Context:
         context = Context()
+        context.app_context = app_context
 
         for name, callback in self._fixtures:
-            setattr(context, name, await stack.enter_async_context(callback()))
+            setattr(
+                context, name, await stack.enter_async_context(callback(app_context))
+            )
+
         return context
 
     async def _run_main(self) -> None:
