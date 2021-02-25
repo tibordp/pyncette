@@ -10,14 +10,16 @@ jobs:
     strategy:
       matrix:
         environment:
-          - python-version: 3.7
+          - python-version: 3.8
             toxenv: check
-          - python-version: 3.7
+          - python-version: 3.8
             toxenv: docs
           - python-version: 3.8
             toxenv: py38
           - python-version: 3.7
             toxenv: py37    
+          - python-version: 3.9
+            toxenv: py39    
     steps:
     - uses: actions/checkout@v2
     - name: Set up Python ${{ matrix.environment['python-version'] }}
