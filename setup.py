@@ -24,7 +24,7 @@ def read(*names, **kwargs):
 
 setup(
     name="pyncette",
-    version="0.6.2",
+    version="0.6.3",
     license="MIT",
     description="A reliable distributed scheduler with pluggable storage backends",
     long_description="%s\n%s"
