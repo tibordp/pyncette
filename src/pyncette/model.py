@@ -91,5 +91,5 @@ class QueryResponse:
 
 
 if TYPE_CHECKING:
-    import pyncette.task
     import pyncette
+    import pyncette.task
