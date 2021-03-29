@@ -1,0 +1,31 @@
+version: "3.1"
+
+services:
+  postgres:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: pyncette
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis
+    restart: always
+    ports:
+      - "6379:6379"
+
+  shell:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    command: bash
+    working_dir: /src
+    environment:
+      POSTGRES_URL: "postgres://postgres:password@postgres/pyncette"
+      REDIS_URL: "redis://redis"
+    volumes:
+      - type: bind
+        source: .
+        target: /src

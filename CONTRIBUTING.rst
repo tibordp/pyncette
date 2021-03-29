@@ -49,19 +49,33 @@ To set up `pyncette` for local development:
 
    Now you can make your changes locally.
 
-5. Running integration tests requires a Redis server running on localhost. 
+5. Running integration tests requires a Redis server running on localhost. Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
+so that integration tests can run seamlessly::
+
+    docker-compose up -d
+    docker-compose run --rm shell
+    tox -e integration
 
 6. When you're done making changes run all the checks and docs builder with `tox <https://tox.readthedocs.io/en/latest/install.html>`_ one command::
 
     tox
 
-7. Commit your changes and push your branch to GitHub::
+7. Pyncette uses black and isort to enforce formatting and import ordering. If you want to auto-format the code, you can do it like this::
+
+    source .tox/check/bin/activate  # Run tox -e check first to create the virtualenv 
+    isort --recursive src tests setup.py
+    black .
+
+8. Commit your changes and push your branch to GitHub::
 
     git add .
     git commit -m "Your detailed description of your changes."
     git push origin name-of-your-bugfix-or-feature
 
-8. Submit a pull request through the GitHub website.
+9. Submit a pull request through the GitHub website.
+
+
+If you run into issues setting up a local environment or testing the code locally, feel free to submit the PR anyway and GitHub Actions will test it for you.
 
 Pull Request Guidelines
 -----------------------

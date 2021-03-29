@@ -124,9 +124,16 @@ To run the all tests run::
 
     tox
 
+Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
+so that integration tests can run seamlessly::
+
+    docker-compose up -d
+    docker-compose run --rm shell
+    tox -e integration
+
 To run just the unit tests (excluding integration tests)::
 
-    tox -e py37  # or py38 
+    tox -e py38  # or py37, py39
 
 Note, to combine the coverage data from all the tox environments run:
 

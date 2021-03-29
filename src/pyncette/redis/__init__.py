@@ -41,7 +41,10 @@ class _LuaScript:
         self._sha = await client.script_load(self._script)
 
     async def execute(
-        self, client: aioredis.Redis, keys: List[Any] = [], args: List[Any] = [],
+        self,
+        client: aioredis.Redis,
+        keys: List[Any] = [],
+        args: List[Any] = [],
     ) -> Any:
         if self._sha is None:
             await self.register(client)
@@ -140,7 +143,10 @@ class RedisRepository(Repository):
         assert execute_after is not None
 
         await self._manage_record(
-            task, "REGISTER", execute_after.isoformat(), json.dumps(task.as_spec()),
+            task,
+            "REGISTER",
+            execute_after.isoformat(),
+            json.dumps(task.as_spec()),
         )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:

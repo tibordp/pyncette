@@ -447,7 +447,8 @@ async def test_concurrency_limit(timemachine, backend):
 
 @pytest.mark.asyncio
 async def test_cancelling_run_should_cancel_executing_tasks(
-    timemachine, backend,
+    timemachine,
+    backend,
 ):
     app = Pyncette(**backend.get_args(timemachine), concurrency_limit=1)
 

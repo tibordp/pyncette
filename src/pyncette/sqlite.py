@@ -46,7 +46,9 @@ class SqliteRepository(Repository):
     _lock: asyncio.Lock
 
     def __init__(
-        self, connection: aiosqlite.Connection, **kwargs: Any,
+        self,
+        connection: aiosqlite.Connection,
+        **kwargs: Any,
     ):
         self._connection = connection
         self._table_name = kwargs.get("sqlite_table_name", "pyncette_tasks")
@@ -226,7 +228,10 @@ class SqliteRepository(Repository):
                 locked_until = None
                 locked_by = None
                 await self._update_record(
-                    task, locked_until, locked_by, execute_after,
+                    task,
+                    locked_until,
+                    locked_by,
+                    execute_after,
                 )
             elif (
                 execute_after <= utc_now
@@ -236,7 +241,10 @@ class SqliteRepository(Repository):
                 locked_by = uuid.uuid4()
                 result = ResultType.READY
                 await self._update_record(
-                    task, locked_until, locked_by, execute_after,
+                    task,
+                    locked_until,
+                    locked_by,
+                    execute_after,
                 )
             else:
                 result = ResultType.PENDING
@@ -271,7 +279,10 @@ class SqliteRepository(Repository):
                 else None
             )
             await self._update_record(
-                task, None, None, task.get_next_execution(utc_now, execute_after),
+                task,
+                None,
+                None,
+                task.get_next_execution(utc_now, execute_after),
             )
 
     async def unlock_task(
