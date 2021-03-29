@@ -4,6 +4,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 
 import io
+import itertools
 import re
 from glob import glob
 from os.path import basename
@@ -21,6 +22,12 @@ def read(*names, **kwargs):
     ) as fh:
         return fh.read()
 
+
+extras = {
+    "redis": ["aioredis>=1.3.1"],
+    "prometheus": ["prometheus_client>=0.8.0"],
+    "postgres": ["asyncpg>=0.20.1"],
+}
 
 setup(
     name="pyncette",
@@ -56,10 +63,6 @@ setup(
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: Implementation :: CPython",
-        # uncomment if you test on these interpreters:
-        # 'Programming Language :: Python :: Implementation :: IronPython',
-        # 'Programming Language :: Python :: Implementation :: Jython',
-        # 'Programming Language :: Python :: Implementation :: Stackless',
         "Topic :: Utilities",
     ],
     project_urls={
@@ -80,8 +83,8 @@ setup(
         "coloredlogs",
     ],
     extras_require={
-        "redis": ["aioredis>=1.3.1"],
-        "prometheus": ["prometheus_client>=0.8.0"],
-        "postgres": ["asyncpg>=0.20.1"],
+        **extras,
+        # A convenience all extras
+        "all": list(itertools.chain(*extras.values())),
     },
 )

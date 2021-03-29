@@ -7,11 +7,12 @@ graft examples
 graft docker
 
 exclude docker
+exclude docker-compose.yml
+exclude Dockerfile.dev
 
 include .readthedocs.yml
 include .bumpversion.cfg
 include .coveragerc
-include .cookiecutterrc
 include .editorconfig
 
 include AUTHORS.rst

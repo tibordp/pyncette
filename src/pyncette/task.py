@@ -108,7 +108,9 @@ class Task:
             raise ValueError(f"Extra parameters must be JSON serializable ({e})")
 
     def _get_future_runs(
-        self, utc_now: datetime.datetime, last_execution: Optional[datetime.datetime],
+        self,
+        utc_now: datetime.datetime,
+        last_execution: Optional[datetime.datetime],
     ) -> Iterator[datetime.datetime]:
         current_time = last_execution if last_execution is not None else utc_now
         current_time = current_time.astimezone(dateutil.tz.gettz(self.timezone))
@@ -128,7 +130,9 @@ class Task:
         assert False
 
     def get_next_execution(
-        self, utc_now: datetime.datetime, last_execution: Optional[datetime.datetime],
+        self,
+        utc_now: datetime.datetime,
+        last_execution: Optional[datetime.datetime],
     ) -> Optional[datetime.datetime]:
         if self.execute_at is not None:
             return (

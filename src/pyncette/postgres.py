@@ -29,7 +29,9 @@ class PostgresRepository(Repository):
     _table_name: str
 
     def __init__(
-        self, pool: asyncpg.pool.Pool, **kwargs: Any,
+        self,
+        pool: asyncpg.pool.Pool,
+        **kwargs: Any,
     ):
         self._pool = pool
         self._table_name = kwargs.get("postgres_table_name", "pyncette_tasks")
@@ -190,7 +192,11 @@ class PostgresRepository(Repository):
 
             if update:
                 await self._update_record(
-                    connection, task, locked_until, locked_by, execute_after,
+                    connection,
+                    task,
+                    locked_until,
+                    locked_by,
+                    execute_after,
                 )
 
             return PollResponse(

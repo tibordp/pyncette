@@ -1,12 +1,8 @@
 """
 
-This example [ab]uses Pyncette to implement a reliable delay queue. It achieves this by scheduling
-a dynamic task that unchedules itself after successful execution. If the task fails, it will keep
-retrying ad infinitum every 60 seconds until it succeeds (the lease duration).
+This example stores the state of the scheduler in a local SQLite database.
 
-This example should uphold all the guarantees one would expect from a reliable distributed queue,
-but as the Redis repository implementation is geared towards recurring tasks, it is not the most 
-efficient or most elegant way of doing it.
+It is safe to run multiple instances of the app on the same machine, as the DB will be used for coordination.
 
 """
 
