@@ -16,6 +16,12 @@ def with_heartbeat(
     lease_remaining_ratio: float = DEFAULT_LEASE_REMAINING_RATIO,
     cancel_on_lease_lost: bool = False,
 ) -> Decorator[TaskFunc]:
+    """
+    Decorate the task to use automatic heartbeating in background.
+
+    :param lease_remaining_ratio: Number between 0 and 1. The ratio between elapsed time and the lease duration when heartbeating will be performed. Default is 0.5.
+    :param cancel_on_lease_lost: Whether the task should be cancelled if lease expires. Default is False.
+    """
     if lease_remaining_ratio <= 0 or lease_remaining_ratio >= 1:
         raise ValueError("Lease remaining ratio must be in (0, 1)")
 

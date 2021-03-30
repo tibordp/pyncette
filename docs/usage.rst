@@ -270,6 +270,36 @@ Redis can be enabled by passing :meth:`~pyncette.postgres.postgres_repository` a
 
 The table will be automatically initialized on startup if it does not exists.
 
+
+Heartbeating
+------------
+
+If have tasks that have an unpredictable run time, it can be hard to come up with an appropriate lease duration in advance. If set too short, lease will expire, leading to duplicate task execution and if too long, there can be insufficient protection against unhealthy workers.
+
+A way to mitigate is to use heartbeating. Heartbeating will periodically extend the lease on the task as long as task is still running. Pyncette supports two approaches to heartbeating:
+
+- Cooperative heartbeating: your task periodically calls ``context.heartbeat()`` to extend the lease
+- Automatic heartbeating: your task is decorated with :meth:`~pyncette.utils.with_heartbeat` and it heartbeats automatically in the background for as long as the task is executing.
+
+Beware that automatic heartbeating can potentially be dangerous if, for example, your task is stuck in an infinite loop or an I/O operation that does not have a proper time out. In this case the lease can be kept alive indefinitely and the task will not make any progress. Cooperative heartbeating may be more verbose, but offers a greater degree of control.
+
+If ``context.heartbeat()`` is called when the lease is already lost, the call will raise :class:`~pyncette.errors.LeaseLostException`, allowing you to bail out early, since another instance is likely already processing the same task.
+
+
+.. code-block:: py
+
+    from pyncette.utils import with_heartbeat
+
+    @app.task(schedule='* * * * * */10')
+    @with_heartbeat()
+    async def foo(context: Context):
+        # The task will be kept alive by the heartbeat
+        await asyncio.sleep(3600)
+
+    if __name__ == '__main__':
+        app.main()
+
+
 .. _dynamic-tasks:
 
 Dynamic tasks
