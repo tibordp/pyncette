@@ -243,6 +243,21 @@ class RedisRepository(Repository):
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not unlocking, as we have lost the lease")
 
+    async def extend_lease(
+        self, utc_now: datetime.datetime, task: Task, lease: Lease
+    ) -> Optional[Lease]:
+        assert isinstance(lease, _ManageScriptResponse)
+        new_locked_until = utc_now + task.lease_duration
+        response = await self._manage_record(
+            task, "EXTEND", lease.version, lease.locked_by, new_locked_until.isoformat()
+        )
+        task._last_lease = response  # type: ignore
+
+        if response.result == ResultType.READY:
+            return Lease(response)
+        else:
+            return None
+
     async def _manage_record(self, task: Task, *args: Any) -> _ManageScriptResponse:
         response = await self._manage_script.execute(
             self._redis_client,

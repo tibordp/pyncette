@@ -11,13 +11,17 @@ Overview
       - |docs|
     * - tests
       - | |github-ci|
-        |
+        | |codecov|
     * - package
       - | |version| |wheel| |supported-versions| |supported-implementations|
         | |commits-since|
 .. |docs| image:: https://readthedocs.org/projects/pyncette/badge/?style=flat
     :target: https://readthedocs.org/projects/pyncette
     :alt: Documentation Status
+
+.. |codecov| image:: https://codecov.io/gh/tibordp/pyncette/branch/master/graphs/badge.svg?branch=master
+    :alt: Coverage Status
+    :target: https://codecov.io/github/tibordp/pyncette
 
 .. |github-ci| image:: https://github.com/tibordp/pyncette/workflows/Python%20package/badge.svg?branch=master
     :alt: Github Actions Build Status
@@ -64,7 +68,7 @@ Full installation (Redis and PostgreSQL persistence and Prometheus metrics expor
 
 ::
 
-    pip install pyncette[redis,postgres,prometheus]
+    pip install pyncette[all]
 
 You can also install the in-development version with::
 

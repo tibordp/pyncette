@@ -229,6 +229,28 @@ class PostgresRepository(Repository):
                 task.get_next_execution(utc_now, record["execute_after"]),
             )
 
+    async def extend_lease(
+        self, utc_now: datetime.datetime, task: Task, lease: Lease
+    ) -> Optional[Lease]:
+        async with self._transaction() as connection:
+            locked_until = utc_now + task.lease_duration
+            result = await connection.execute(
+                f"""
+                UPDATE {self._table_name}
+                SET
+                    locked_until = $1
+                WHERE name = $2 AND locked_by = $3
+                """,
+                locked_until,
+                task.canonical_name,
+                lease,
+            )
+            logger.debug(f"extend_lease returned {result}")
+            if result == "UPDATE 1":
+                return lease
+            else:
+                return None
+
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:

@@ -1,6 +1,7 @@
 """
 
-This example uses Pyncette to implement a reliable delay queue. 
+This example uses Pyncette to implement a reliable delay queue (persistence is needed for durability
+or for running multiple instances of the app at the same time, see examples/persistence-*.py for details)
 
 After the task instance suceeds it will not be scheduled again as with recurrent tasks, however, 
 if an exception is raised, it will be retried if ExecutionMode.AT_LEAST_ONCE is used.
@@ -17,11 +18,10 @@ from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
-from pyncette.redis import redis_repository
 
 logger = logging.getLogger(__name__)
 
-app = Pyncette(repository_factory=redis_repository, redis_url="redis://localhost")
+app = Pyncette()
 
 
 @app.dynamic_task(execution_mode=ExecutionMode.AT_LEAST_ONCE)

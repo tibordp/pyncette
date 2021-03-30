@@ -26,6 +26,7 @@ from typing import Type
 import coloredlogs
 import dateutil.tz
 
+from .errors import LeaseLostException
 from .errors import PyncetteException
 from .executor import DefaultExecutor
 from .model import Context
@@ -105,6 +106,21 @@ class PyncetteContext:
         utc_now = _current_time()
         await self._repository.unregister_task(utc_now, concrete_task)
 
+    async def _heartbeat(self, task: Task, context: Context, lease: Lease) -> None:
+        utc_now = _current_time()
+
+        # For best-effort tasks, there are no leases to be had
+        if task.execution_mode == ExecutionMode.AT_MOST_ONCE:
+            return
+
+        assert context._lease is not None
+        new_lease = await self._repository.extend_lease(utc_now, task, context._lease)
+        if new_lease is None:
+            context._lease = None
+            raise LeaseLostException(task)
+        else:
+            context._lease = new_lease
+
     def _populate_context(self, task: Task, poll_response: PollResponse) -> Context:
         assert self._root_context is not None
 
@@ -117,12 +133,15 @@ class PyncetteContext:
         )
         context.scheduled_at = poll_response.scheduled_at.astimezone(tz)
         context.args = copy.copy(task.extra_args)
+        context._lease = poll_response.lease
+        context.heartbeat = partial(self._heartbeat, task, context, poll_response.lease)
 
         return context
 
     async def _execute_task(self, task: Task, poll_response: PollResponse) -> None:
+        context = self._populate_context(task, poll_response)
+
         try:
-            context = self._populate_context(task, poll_response)
             task_func: Callable[[], Awaitable[None]] = partial(task, context)
             for middleware in reversed(self._app._middlewares):
                 task_func = partial(middleware, context, task_func)
@@ -136,13 +155,20 @@ class PyncetteContext:
         if task.execution_mode == ExecutionMode.AT_MOST_ONCE:
             return
 
-        assert poll_response.lease is not None
+        if context._lease is None:
+            # In case lease is lost during heartbeating, it makes no sense to try
+            # committing or unlocking, regardless of the task execution mode and
+            # failure mode, since the record is already owned by another instance.
+            logger.warning(f"Lease on task {task} lost, bailing out")
+            return
+
         utc_now = _current_time()
         try:
+
             if execution_suceeded or task.failure_mode == FailureMode.COMMIT:
-                await self._repository.commit_task(utc_now, task, poll_response.lease)
+                await self._repository.commit_task(utc_now, task, context._lease)
             elif task.failure_mode == FailureMode.UNLOCK:
-                await self._repository.unlock_task(utc_now, task, poll_response.lease)
+                await self._repository.unlock_task(utc_now, task, context._lease)
         except Exception as e:
             logger.warning(
                 "Failed to commit task {task}, it will likely execute again.",

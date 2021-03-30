@@ -180,12 +180,12 @@ class SqliteRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
         async with self._transaction(explicit_begin=True):
-            record = await self._connection.execute_fetchall(
+            records = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = ?",
                 (task.canonical_name,),
             )
 
-            if not record:
+            if not records:
                 # Regular (non-dynamic) tasks will be implicitly created on first poll,
                 # but dynamic task instances must be explicitely created to prevent spurious
                 # poll from re-creating them after being deleted.
@@ -203,7 +203,7 @@ class SqliteRepository(Repository):
                     (task.canonical_name, _to_timestamp(execute_after)),
                 )
             else:
-                record = record[0]
+                record = next(iter(records))
                 execute_after = cast(
                     datetime.datetime, _from_timestamp(record["execute_after"])
                 )
@@ -257,16 +257,16 @@ class SqliteRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         async with self._transaction(explicit_begin=True):
-            record = await self._connection.execute_fetchall(
+            records = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = $1",
                 (task.canonical_name,),
             )
 
-            if not record:
+            if not records:
                 logger.warning(f"Task {task} not found, skipping.")
                 return
 
-            record = record[0]
+            record = next(iter(records))
             if record["locked_by"] != str(lease):
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
@@ -284,6 +284,25 @@ class SqliteRepository(Repository):
                 None,
                 task.get_next_execution(utc_now, execute_after),
             )
+
+    async def extend_lease(
+        self, utc_now: datetime.datetime, task: Task, lease: Lease
+    ) -> Optional[Lease]:
+        async with self._transaction():
+            locked_until = utc_now + task.lease_duration
+            async with await self._connection.execute(
+                f"""
+                UPDATE {self._table_name}
+                SET
+                    locked_until = ?
+                WHERE name = ? AND locked_by = ?
+                """,
+                (_to_timestamp(locked_until), task.canonical_name, str(lease)),
+            ) as cursor:
+                if cursor.rowcount == 1:
+                    return lease
+                else:
+                    return None
 
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease

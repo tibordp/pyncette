@@ -85,6 +85,15 @@ elseif ARGV[1] == 'UNLOCK' then
     else
         result = "LEASE_MISMATCH"
     end
+elseif ARGV[1] == 'EXTEND' then
+    local _, incoming_version, incoming_locked_by, incoming_locked_until = unpack(ARGV)
+
+    if version == incoming_version and locked_by == incoming_locked_by then
+        updateRecord(execute_after, incoming_locked_until, incoming_locked_by, task_spec)
+        result = "READY"
+    else
+        result = "LEASE_MISMATCH"
+    end
 elseif ARGV[1] == 'REGISTER' then
     local _, incoming_execute_after, incoming_task_spec = unpack(ARGV)
 

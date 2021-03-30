@@ -17,6 +17,7 @@ Submodules
    pyncette.healthcheck
    pyncette.sqlite
    pyncette.task
+   pyncette.utils
    
 
 Module contents
