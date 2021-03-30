@@ -81,6 +81,32 @@ async def test_failed_task_retried_on_every_tick_if_unlock(timemachine, backend)
 
 
 @pytest.mark.asyncio
+async def test_unlock_lease_expires(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=2),
+        lease_duration=datetime.timedelta(seconds=2),
+        failure_mode=FailureMode.UNLOCK,
+    )
+    async def failing_task(context: Context) -> None:
+        counter.execute()
+        await asyncio.sleep(3)
+        raise RuntimeError("Oops")
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 5
+
+
+@pytest.mark.asyncio
 async def test_failed_task_retried_after_lease_over_if_failure_mode_none(
     timemachine, backend
 ):
@@ -712,14 +738,18 @@ async def test_coordination(timemachine, backend):
     if not backend.is_persistent:
         pytest.skip("This test requires persistence.")
 
-    app = Pyncette(**backend.get_args(timemachine))
+    args = backend.get_args(timemachine)
+    app1 = Pyncette(**args)
+    app2 = Pyncette(**args)
+
     counter = MagicMock()
 
-    @app.task(interval=datetime.timedelta(seconds=2))
+    @app1.task(interval=datetime.timedelta(seconds=2))
+    @app2.task(interval=datetime.timedelta(seconds=2))
     async def successful_task(context: Context) -> None:
         counter.execute()
 
-    async with app.create() as ctx1, app.create() as ctx2:
+    async with app1.create() as ctx1, app2.create() as ctx2:
         task1 = asyncio.create_task(ctx1.run())
         task2 = asyncio.create_task(ctx2.run())
         await timemachine.step(datetime.timedelta(seconds=10))
@@ -736,14 +766,18 @@ async def test_dynamic_coordination(timemachine, backend):
     if not backend.is_persistent:
         pytest.skip("This test requires persistence.")
 
-    app = Pyncette(**backend.get_args(timemachine))
+    args = backend.get_args(timemachine)
+    app1 = Pyncette(**args)
+    app2 = Pyncette(**args)
+
     counter = MagicMock()
 
-    @app.dynamic_task()
+    @app1.dynamic_task()
+    @app2.dynamic_task()
     async def hello(context: Context) -> None:
         counter.execute()
 
-    async with app.create() as ctx1, app.create() as ctx2:
+    async with app1.create() as ctx1, app2.create() as ctx2:
         task1 = asyncio.create_task(ctx1.run())
         task2 = asyncio.create_task(ctx2.run())
         await ctx1.schedule_task(hello, "1", interval=datetime.timedelta(seconds=2))

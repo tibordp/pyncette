@@ -1,0 +1,330 @@
+# HELP python_gc_objects_collected_total Objects collected during gc
+# TYPE python_gc_objects_collected_total counter
+python_gc_objects_collected_total{generation="0"} 10474.0
+python_gc_objects_collected_total{generation="1"} 105143.0
+python_gc_objects_collected_total{generation="2"} 7033.0
+# HELP python_gc_objects_uncollectable_total Uncollectable object found during GC
+# TYPE python_gc_objects_uncollectable_total counter
+python_gc_objects_uncollectable_total{generation="0"} 0.0
+python_gc_objects_uncollectable_total{generation="1"} 0.0
+python_gc_objects_uncollectable_total{generation="2"} 0.0
+# HELP python_gc_collections_total Number of times this generation was collected
+# TYPE python_gc_collections_total counter
+python_gc_collections_total{generation="0"} 354.0
+python_gc_collections_total{generation="1"} 32.0
+python_gc_collections_total{generation="2"} 2.0
+# HELP python_info Python platform information
+# TYPE python_info gauge
+python_info{implementation="CPython",major="3",minor="8",patchlevel="8",version="3.8.8"} 1.0
+# HELP process_virtual_memory_bytes Virtual memory size in bytes.
+# TYPE process_virtual_memory_bytes gauge
+process_virtual_memory_bytes 8.45869056e+08
+# HELP process_resident_memory_bytes Resident memory size in bytes.
+# TYPE process_resident_memory_bytes gauge
+process_resident_memory_bytes 7.6816384e+07
+# HELP process_start_time_seconds Start time of the process since unix epoch in seconds.
+# TYPE process_start_time_seconds gauge
+process_start_time_seconds 1.61712097033e+09
+# HELP process_cpu_seconds_total Total user and system CPU time spent in seconds.
+# TYPE process_cpu_seconds_total counter
+process_cpu_seconds_total 8.4
+# HELP process_open_fds Number of open file descriptors.
+# TYPE process_open_fds gauge
+process_open_fds 16.0
+# HELP process_max_fds Maximum number of open file descriptors.
+# TYPE process_max_fds gauge
+process_max_fds 1.048576e+06
+# HELP pyncette_tasks_total Total count of tasks operations
+# TYPE pyncette_tasks_total counter
+pyncette_tasks_total{task_name="task_1"} 5.0
+pyncette_tasks_total{task_name="dynamic_task_1"} 5.0
+# HELP pyncette_tasks_created Total count of tasks operations
+# TYPE pyncette_tasks_created gauge
+pyncette_tasks_created{task_name="task_1"} 1.6171209832495992e+09
+pyncette_tasks_created{task_name="dynamic_task_1"} 1.6171209832548964e+09
+# HELP pyncette_tasks_duration_seconds Histogram of tasks processing time
+# TYPE pyncette_tasks_duration_seconds histogram
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_tasks_duration_seconds_count{task_name="task_1"} 5.0
+pyncette_tasks_duration_seconds_sum{task_name="task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_tasks_duration_seconds_count{task_name="dynamic_task_1"} 5.0
+pyncette_tasks_duration_seconds_sum{task_name="dynamic_task_1"} 0.0
+# HELP pyncette_tasks_duration_seconds_created Histogram of tasks processing time
+# TYPE pyncette_tasks_duration_seconds_created gauge
+pyncette_tasks_duration_seconds_created{task_name="task_1"} 1.6171209832504554e+09
+pyncette_tasks_duration_seconds_created{task_name="dynamic_task_1"} 1.6171209832549653e+09
+# HELP pyncette_tasks_failures_total Total count of failed tasks failures
+# TYPE pyncette_tasks_failures_total counter
+# HELP pyncette_tasks_in_progress Gauge of tasks operations currently being processed
+# TYPE pyncette_tasks_in_progress gauge
+pyncette_tasks_in_progress{task_name="task_1"} 0.0
+pyncette_tasks_in_progress{task_name="dynamic_task_1"} 0.0
+# HELP pyncette_tasks_staleness_seconds Histogram of staleness of task executions (difference between scheduled and actual time)
+# TYPE pyncette_tasks_staleness_seconds histogram
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_tasks_staleness_seconds_count{task_name="task_1"} 5.0
+pyncette_tasks_staleness_seconds_sum{task_name="task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_tasks_staleness_seconds_count{task_name="dynamic_task_1"} 5.0
+pyncette_tasks_staleness_seconds_sum{task_name="dynamic_task_1"} 0.0
+# HELP pyncette_tasks_staleness_seconds_created Histogram of staleness of task executions (difference between scheduled and actual time)
+# TYPE pyncette_tasks_staleness_seconds_created gauge
+pyncette_tasks_staleness_seconds_created{task_name="task_1"} 1.617120983249316e+09
+pyncette_tasks_staleness_seconds_created{task_name="dynamic_task_1"} 1.617120983254798e+09
+# HELP pyncette_repository_ops_total Total count of repository_ops operations
+# TYPE pyncette_repository_ops_total counter
+pyncette_repository_ops_total{operation="register_task",task_name="dynamic_task_1"} 1.0
+pyncette_repository_ops_total{operation="poll_task",task_name="task_1"} 11.0
+pyncette_repository_ops_total{operation="poll_dynamic_task",task_name="dynamic_task_1"} 11.0
+pyncette_repository_ops_total{operation="commit_task",task_name="task_1"} 5.0
+pyncette_repository_ops_total{operation="poll_task",task_name="dynamic_task_1"} 5.0
+pyncette_repository_ops_total{operation="commit_task",task_name="dynamic_task_1"} 5.0
+pyncette_repository_ops_total{operation="unregister_task",task_name="dynamic_task_1"} 1.0
+# HELP pyncette_repository_ops_created Total count of repository_ops operations
+# TYPE pyncette_repository_ops_created gauge
+pyncette_repository_ops_created{operation="register_task",task_name="dynamic_task_1"} 1.6171209832399712e+09
+pyncette_repository_ops_created{operation="poll_task",task_name="task_1"} 1.6171209832415795e+09
+pyncette_repository_ops_created{operation="poll_dynamic_task",task_name="dynamic_task_1"} 1.617120983243168e+09
+pyncette_repository_ops_created{operation="commit_task",task_name="task_1"} 1.617120983250574e+09
+pyncette_repository_ops_created{operation="poll_task",task_name="dynamic_task_1"} 1.6171209832520444e+09
+pyncette_repository_ops_created{operation="commit_task",task_name="dynamic_task_1"} 1.617120983255087e+09
+pyncette_repository_ops_created{operation="unregister_task",task_name="dynamic_task_1"} 1.6171209832950842e+09
+# HELP pyncette_repository_ops_duration_seconds Histogram of repository_ops processing time
+# TYPE pyncette_repository_ops_duration_seconds histogram
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="register_task",task_name="dynamic_task_1"} 1.0
+pyncette_repository_ops_duration_seconds_sum{operation="register_task",task_name="dynamic_task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="poll_task",task_name="task_1"} 11.0
+pyncette_repository_ops_duration_seconds_sum{operation="poll_task",task_name="task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="poll_dynamic_task",task_name="dynamic_task_1"} 11.0
+pyncette_repository_ops_duration_seconds_sum{operation="poll_dynamic_task",task_name="dynamic_task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+s
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="commit_task",task_name="task_1"} 5.0
+pyncette_repository_ops_duration_seconds_sum{operation="commit_task",task_name="task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="poll_task",task_name="dynamic_task_1"} 5.0
+pyncette_repository_ops_duration_seconds_sum{operation="poll_task",task_name="dynamic_task_1"} 0.0
+
+
+
+
+
+
+
+s
+
+
+
+
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="commit_task",task_name="dynamic_task_1"} 5.0
+pyncette_repository_ops_duration_seconds_sum{operation="commit_task",task_name="dynamic_task_1"} 0.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_repository_ops_duration_seconds_count{operation="unregister_task",task_name="dynamic_task_1"} 1.0
+pyncette_repository_ops_duration_seconds_sum{operation="unregister_task",task_name="dynamic_task_1"} 0.0
+# HELP pyncette_repository_ops_duration_seconds_created Histogram of repository_ops processing time
+# TYPE pyncette_repository_ops_duration_seconds_created gauge
+pyncette_repository_ops_duration_seconds_created{operation="register_task",task_name="dynamic_task_1"} 1.617120983241317e+09
+pyncette_repository_ops_duration_seconds_created{operation="poll_task",task_name="task_1"} 1.6171209832430217e+09
+pyncette_repository_ops_duration_seconds_created{operation="poll_dynamic_task",task_name="dynamic_task_1"} 1.617120983244474e+09
+pyncette_repository_ops_duration_seconds_created{operation="commit_task",task_name="task_1"} 1.6171209832532678e+09
+pyncette_repository_ops_duration_seconds_created{operation="poll_task",task_name="dynamic_task_1"} 1.617120983254561e+09
+pyncette_repository_ops_duration_seconds_created{operation="commit_task",task_name="dynamic_task_1"} 1.6171209832565997e+09
+pyncette_repository_ops_duration_seconds_created{operation="unregister_task",task_name="dynamic_task_1"} 1.6171209832959104e+09
+# HELP pyncette_repository_ops_failures_total Total count of failed repository_ops failures
+# TYPE pyncette_repository_ops_failures_total counter
+# HELP pyncette_repository_ops_in_progress Gauge of repository_ops operations currently being processed
+# TYPE pyncette_repository_ops_in_progress gauge
+pyncette_repository_ops_in_progress{operation="register_task",task_name="dynamic_task_1"} 0.0
+pyncette_repository_ops_in_progress{operation="poll_task",task_name="task_1"} 0.0
+pyncette_repository_ops_in_progress{operation="poll_dynamic_task",task_name="dynamic_task_1"} 0.0
+pyncette_repository_ops_in_progress{operation="commit_task",task_name="task_1"} 0.0
+pyncette_repository_ops_in_progress{operation="poll_task",task_name="dynamic_task_1"} 0.0
+pyncette_repository_ops_in_progress{operation="commit_task",task_name="dynamic_task_1"} 0.0
+pyncette_repository_ops_in_progress{operation="unregister_task",task_name="dynamic_task_1"} 0.0
+# HELP pyncette_ticks_total Total count of ticks operations
+# TYPE pyncette_ticks_total counter
+pyncette_ticks_total 11.0
+# HELP pyncette_ticks_created Total count of ticks operations
+# TYPE pyncette_ticks_created gauge
+pyncette_ticks_created 1.6171209716155446e+09
+# HELP pyncette_ticks_duration_seconds Histogram of ticks processing time
+# TYPE pyncette_ticks_duration_seconds histogram
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+pyncette_ticks_duration_seconds_count 11.0
+pyncette_ticks_duration_seconds_sum 0.0
+# HELP pyncette_ticks_duration_seconds_created Histogram of ticks processing time
+# TYPE pyncette_ticks_duration_seconds_created gauge
+pyncette_ticks_duration_seconds_created 1.6171209716155655e+09
+# HELP pyncette_ticks_failures_total Total count of failed ticks failures
+# TYPE pyncette_ticks_failures_total counter
+# HELP pyncette_ticks_in_progress Gauge of ticks operations currently being processed
+# TYPE pyncette_ticks_in_progress gauge
+pyncette_ticks_in_progress 0.0

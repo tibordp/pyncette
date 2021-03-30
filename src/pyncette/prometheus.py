@@ -14,13 +14,13 @@ from prometheus_client import Counter
 from prometheus_client import Gauge
 from prometheus_client import Histogram
 
+from . import pyncette
 from .model import Context
 from .model import Lease
 from .model import PollResponse
 from .model import QueryResponse
 from .pyncette import Pyncette
 from .pyncette import PyncetteContext
-from .pyncette import _current_time
 from .repository import Repository
 from .repository import RepositoryFactory
 from .task import Task
@@ -182,7 +182,7 @@ async def prometheus_middleware(
 ) -> None:
     """Middleware that exposes task execution metrics to Prometheus"""
     labels = _get_task_labels(context.task)
-    staleness = _current_time() - context.scheduled_at
+    staleness = pyncette._current_time() - context.scheduled_at
     _task_staleness.labels(**labels).observe(staleness.total_seconds())
     async with _task_metric_set.measure(**labels):
         await next()

@@ -311,7 +311,8 @@ async def postgres_repository(**kwargs: Any) -> AsyncIterator[PostgresRepository
     postgres_pool = await asyncpg.create_pool(kwargs["postgres_url"])
     try:
         repository = PostgresRepository(postgres_pool, **kwargs)
-        await repository.initialize()
+        if not kwargs.get("postgres_skip_table_create", False):
+            await repository.initialize()
 
         yield repository
     finally:

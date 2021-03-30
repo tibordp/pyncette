@@ -7,6 +7,7 @@ from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
+from pyncette.utils import with_heartbeat
 
 
 def test_invalid_configuration():
@@ -49,3 +50,33 @@ def test_invalid_configuration():
     ):
         app = Pyncette()
         app.task(schedule="* * * * *", timezone="Gondwana/Atlantis")(dummy)
+
+    with pytest.raises(ValueError):
+        app = Pyncette()
+        app.task(interval=datetime.timedelta(seconds=2), timezone="Europe/Dublin")(
+            dummy
+        )
+
+    with pytest.raises(ValueError, match="Extra parameters must be JSON serializable"):
+        app = Pyncette()
+        app.task(schedule="* * * * *", extra_arg=object())(dummy)
+
+
+def test_instantiate_non_dynamic_task():
+    async def dummy(context: Context):
+        pass
+
+    with pytest.raises(ValueError):
+        app = Pyncette()
+        app.task()(dummy).instantiate(name="foo")
+
+
+def test_heartbeat_invalid_configuration():
+    async def dummy(context: Context):
+        pass
+
+    with pytest.raises(ValueError):
+        with_heartbeat(lease_remaining_ratio=-1)
+
+    with pytest.raises(ValueError):
+        with_heartbeat(lease_remaining_ratio=2)

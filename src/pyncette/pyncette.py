@@ -290,6 +290,9 @@ class Pyncette:
         """Decorator for marking the coroutine as a task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
+            if isinstance(func, Task):
+                func = func.task_func
+
             task_kwargs = {
                 **kwargs,
                 "name": kwargs.get("name", None) or getattr(func, "__name__", None),
@@ -305,6 +308,9 @@ class Pyncette:
         """Decorator for marking the coroutine as a dynamic task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
+            if isinstance(func, Task):
+                func = func.task_func
+
             task_kwargs = {
                 **kwargs,
                 "name": kwargs.get("name", None) or getattr(func, "__name__", None),
