@@ -60,11 +60,9 @@ so that integration tests can run seamlessly::
 
     tox
 
-6. Pyncette uses black and isort to enforce formatting and import ordering. If you want to auto-format the code, you can do it like this::
+6. Pyncette uses `black` and `isort` to enforce formatting and import ordering. If you want to auto-format the code, you can do it like this::
 
-    source .tox/check/bin/activate  # Run tox -e check first to create the virtualenv 
-    isort --recursive src tests setup.py
-    black .
+    tox -e fmt
 
 7. Commit your changes and push your branch to GitHub::
 
@@ -84,10 +82,9 @@ If you need some code review or feedback while you're developing the code just m
 
 For merging, you should:
 
-1. Include passing tests (run ``tox``) [1]_.
-2. Update documentation when there's new API, functionality etc.
-3. Add a note to ``CHANGELOG.rst`` about the changes.
-4. Add yourself to ``AUTHORS.rst``.
+1. Update documentation when there's new API, functionality etc.
+2. Add a note to ``CHANGELOG.rst`` about the changes.
+3. Add yourself to ``AUTHORS.rst``.
 
 .. [1] If you don't have all the necessary python versions available locally you can rely on Github Actions - it will
        run the tests for each change you add in the pull request.

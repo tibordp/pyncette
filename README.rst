@@ -19,6 +19,10 @@ Overview
     :target: https://readthedocs.org/projects/pyncette
     :alt: Documentation Status
 
+.. |codecov| image:: https://codecov.io/gh/tibordp/pyncette/branch/master/graphs/badge.svg?branch=master
+    :alt: Coverage Status
+    :target: https://codecov.io/github/tibordp/pyncette
+
 .. |github-ci| image:: https://github.com/tibordp/pyncette/workflows/Python%20package/badge.svg?branch=master
     :alt: Github Actions Build Status
     :target: https://github.com/tibordp/pyncette/actions?query=branch%3Amaster+workflow%3A%22Python+package%22
