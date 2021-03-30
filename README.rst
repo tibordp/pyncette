@@ -11,7 +11,7 @@ Overview
       - |docs|
     * - tests
       - | |github-ci|
-        |
+        | |codecov|
     * - package
       - | |version| |wheel| |supported-versions| |supported-implementations|
         | |commits-since|
