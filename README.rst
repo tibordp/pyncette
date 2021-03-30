@@ -64,7 +64,7 @@ Full installation (Redis and PostgreSQL persistence and Prometheus metrics expor
 
 ::
 
-    pip install pyncette[redis,postgres,prometheus]
+    pip install pyncette[all]
 
 You can also install the in-development version with::
 
