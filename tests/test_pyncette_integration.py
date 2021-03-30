@@ -13,6 +13,7 @@ from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
 from pyncette import PyncetteContext
+from pyncette.errors import LeaseLostException
 from pyncette.errors import PyncetteException
 
 
@@ -894,3 +895,58 @@ async def test_execute_at_at_most_once(timemachine, backend):
         await timemachine.unwind()
 
     assert counter.execute.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_lease_is_not_lost_if_heartbeating(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=3),
+        lease_duration=datetime.timedelta(seconds=2),
+    )
+    async def successful_task(context: Context) -> None:
+        counter.execute()
+        for _ in range(6):
+            await asyncio.sleep(1)
+            await context.heartbeat()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_fails_if_lease_lost(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=2),
+        lease_duration=datetime.timedelta(seconds=1),
+    )
+    async def successful_task(context: Context) -> None:
+        await asyncio.sleep(5)
+        try:
+            await context.heartbeat()
+            counter.successes()
+        except LeaseLostException:
+            counter.failures()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.failures.call_count == 8
+    assert counter.successes.call_count == 1

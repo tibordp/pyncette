@@ -285,6 +285,25 @@ class SqliteRepository(Repository):
                 task.get_next_execution(utc_now, execute_after),
             )
 
+    async def extend_lease(
+        self, utc_now: datetime.datetime, task: Task, lease: Lease
+    ) -> Optional[Lease]:
+        async with self._transaction():
+            locked_until = utc_now + task.lease_duration
+            async with await self._connection.execute(
+                f"""
+                UPDATE {self._table_name}
+                SET
+                    locked_until = ?
+                WHERE name = ? AND locked_by = ?
+                """,
+                (_to_timestamp(locked_until), task.canonical_name, str(lease)),
+            ) as cursor:
+                if cursor.rowcount == 1:
+                    return lease
+                else:
+                    return None
+
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:

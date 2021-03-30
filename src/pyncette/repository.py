@@ -44,6 +44,11 @@ class Repository(abc.ABC):
     ) -> None:
         """Commits the task, which signals a successful run."""
 
+    async def extend_lease(
+        self, utc_now: datetime.datetime, task: Task, lease: Lease
+    ) -> Optional[Lease]:
+        """Extends the lease on the task. Returns true if lease was still valid."""
+
     @abc.abstractmethod
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease

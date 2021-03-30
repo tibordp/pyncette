@@ -21,6 +21,13 @@ T = TypeVar("T")
 Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
 
+# https://github.com/python/mypy/issues/708
+
+
+class VoidAsyncCallable(Protocol):
+    def __call__(self) -> Awaitable[None]:
+        ...
+
 
 class Context:
     """Task execution context. This class can have dynamic attributes."""
@@ -28,6 +35,8 @@ class Context:
     app_context: "pyncette.PyncetteContext"
     task: "pyncette.task.Task"
     scheduled_at: datetime.datetime
+    lease: Optional[Lease]
+    heartbeat: VoidAsyncCallable
     args: Dict[str, Any]
 
 
