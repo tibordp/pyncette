@@ -15,6 +15,7 @@ from pyncette import Pyncette
 from pyncette import PyncetteContext
 from pyncette.errors import LeaseLostException
 from pyncette.errors import PyncetteException
+from pyncette.utils import with_heartbeat
 
 
 @pytest.mark.asyncio
@@ -940,6 +941,7 @@ async def test_heartbeat_fails_if_lease_lost(timemachine, backend):
             counter.successes()
         except LeaseLostException:
             counter.failures()
+            raise
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
@@ -950,3 +952,28 @@ async def test_heartbeat_fails_if_lease_lost(timemachine, backend):
 
     assert counter.failures.call_count == 8
     assert counter.successes.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_automatic_heartbeating(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=1),
+        lease_duration=datetime.timedelta(seconds=1),
+    )
+    @with_heartbeat()
+    async def successful_task(context: Context) -> None:
+        counter()
+        await asyncio.sleep(6)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.call_count == 2

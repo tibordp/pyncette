@@ -35,7 +35,7 @@ class Context:
     app_context: "pyncette.PyncetteContext"
     task: "pyncette.task.Task"
     scheduled_at: datetime.datetime
-    lease: Optional[Lease]
+    _lease: Optional[Lease]
     heartbeat: VoidAsyncCallable
     args: Dict[str, Any]
 
