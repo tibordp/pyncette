@@ -1,16 +1,49 @@
 import asyncio
+import datetime
 
 import aiohttp
 import pytest
 from conftest import wrap_factory
 
 from pyncette import Pyncette
+from pyncette.healthcheck import default_healthcheck
 from pyncette.healthcheck import use_healthcheck_server
 from pyncette.sqlite import sqlite_repository
 
 
 def get_healthcheck_port(app_context):
     return app_context._root_context._healthcheck.sockets[0].getsockname()[1]
+
+
+@pytest.mark.asyncio
+async def test_default_healthcheck_handler_healthy(timemachine):
+    app = Pyncette(repository_factory=wrap_factory(sqlite_repository, timemachine))
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=1.5))
+        is_healthy = await default_healthcheck(ctx)
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert is_healthy
+
+
+@pytest.mark.asyncio
+async def test_default_healthcheck_handler_unhealthy(timemachine):
+    app = Pyncette(repository_factory=wrap_factory(sqlite_repository, timemachine))
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        # Advance time without executing calbacks
+        timemachine._update_offset(timemachine.offset + datetime.timedelta(hours=1))
+        is_healthy = await default_healthcheck(ctx)
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert not is_healthy
 
 
 @pytest.mark.asyncio

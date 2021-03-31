@@ -109,6 +109,9 @@ class RedisRepository(Repository):
         self._poll_dynamic_script = _LuaScript("poll_dynamic.lua")
         self._manage_script = _LuaScript("manage.lua")
 
+        if self._batch_size < 1:
+            raise ValueError("Batch size must be greater than 0")
+
     async def register_scripts(self) -> None:
         """Registers the Lua scripts used by the implementation ahead of time"""
         await self._poll_dynamic_script.register(self._redis_client)

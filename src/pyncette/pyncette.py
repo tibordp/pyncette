@@ -8,7 +8,6 @@ import datetime
 import logging
 import os
 import signal
-import sys
 import time
 from functools import partial
 from typing import Any
@@ -290,6 +289,9 @@ class Pyncette:
         """Decorator for marking the coroutine as a task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
+            if isinstance(func, Task):
+                func = func.task_func
+
             task_kwargs = {
                 **kwargs,
                 "name": kwargs.get("name", None) or getattr(func, "__name__", None),
@@ -305,6 +307,9 @@ class Pyncette:
         """Decorator for marking the coroutine as a dynamic task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
+            if isinstance(func, Task):
+                func = func.task_func
+
             task_kwargs = {
                 **kwargs,
                 "name": kwargs.get("name", None) or getattr(func, "__name__", None),
@@ -367,9 +372,9 @@ class Pyncette:
             if not context._shutting_down.is_set():
                 context.shutdown()
             else:
-                logger.warning("Terminating")
+                logger.critical("Terminating...")
                 logging.shutdown()
-                sys.exit(1)
+                os._exit(1)
 
         signal.signal(signal.SIGINT, handler)
         signal.signal(signal.SIGTERM, handler)

@@ -6,17 +6,17 @@ from typing import Callable
 
 from aiohttp import web
 
+from pyncette import pyncette
 from pyncette.pyncette import Pyncette
 from pyncette.pyncette import PyncetteContext
-from pyncette.pyncette import _current_time
 
 logger = logging.getLogger(__name__)
 
 
 async def default_healthcheck(app_context: PyncetteContext) -> bool:
-    utcnow = _current_time()
+    utcnow = pyncette._current_time()
     last_tick = app_context.last_tick
-    grace_period = app_context._app._poll_interval
+    grace_period = app_context._app._poll_interval * 2
 
     return last_tick is not None and (utcnow - last_tick < grace_period)
 
@@ -47,7 +47,7 @@ def use_healthcheck_server(
             try:
                 is_healthy = await healthcheck_handler(app_context)
             except Exception as e:
-                logger.warning("Exception raised in healthcheck handler", e)
+                logger.warning("Exception raised in healthcheck handler", exc_info=e)
                 is_healthy = False
 
             if is_healthy:
