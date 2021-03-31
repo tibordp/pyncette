@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 import dateutil.tz
 import pytest
-from timemachine import TimeMachine
+from utils.timemachine import TimeMachine
 
 import pyncette
 from pyncette.postgres import postgres_repository

@@ -8,6 +8,8 @@ branch = true
 source =
     pyncette
     tests
+omit =
+    tests/utils/*
 parallel = true
 
 [report]
@@ -16,4 +18,5 @@ precision = 2
 exclude_lines =
     if TYPE_CHECKING:
     assert False
+    pragma: no cover
 omit = *migrations*

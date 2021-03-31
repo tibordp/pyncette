@@ -24,9 +24,9 @@ Lease = NewType("Lease", object)
 # https://github.com/python/mypy/issues/708
 
 
-class VoidAsyncCallable(Protocol):
+class Heartbeater(Protocol):
     def __call__(self) -> Awaitable[None]:
-        ...
+        "Heartbeats on the message"
 
 
 class Context:
@@ -36,7 +36,7 @@ class Context:
     task: "pyncette.task.Task"
     scheduled_at: datetime.datetime
     _lease: Optional[Lease]
-    heartbeat: VoidAsyncCallable
+    heartbeat: Heartbeater
     args: Dict[str, Any]
 
 

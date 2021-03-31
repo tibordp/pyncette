@@ -45,8 +45,6 @@ def with_heartbeat(
                         # executing, it makes no sense to continue heartbeating
                         # since the lease has already been lost.
                         return
-                    except asyncio.CancelledError:
-                        return
                     except Exception as e:
                         # There may be transient errors while heartbeating. In this case
                         # ignore them until the next heartbeat interval.

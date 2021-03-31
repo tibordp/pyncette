@@ -15,6 +15,7 @@ from pyncette import Pyncette
 from pyncette import PyncetteContext
 from pyncette.errors import LeaseLostException
 from pyncette.errors import PyncetteException
+from pyncette.executor import SynchronousExecutor
 from pyncette.utils import with_heartbeat
 
 
@@ -474,6 +475,33 @@ async def test_concurrency_limit(timemachine, backend):
 
 
 @pytest.mark.asyncio
+async def test_synchronous_executor(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine), executor_cls=SynchronousExecutor)
+
+    counter = MagicMock()
+    release = asyncio.Event()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=1),
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
+    )
+    async def long_running_task(context: Context) -> None:
+        counter.execute()
+        await release.wait()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        assert counter.execute.call_count == 1
+        ctx.shutdown()
+        release.set()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_cancelling_run_should_cancel_executing_tasks(
     timemachine,
     backend,
@@ -584,6 +612,47 @@ async def test_dynamic_successful_task_interval(timemachine, backend):
         await timemachine.unwind()
 
     assert counter.execute.call_count == 15
+
+
+@pytest.mark.asyncio
+async def test_dynamic_successful_task_interval_small_batch_size(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine), batch_size=1)
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await asyncio.gather(
+            ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=2)),
+            ctx.schedule_task(hello, "2", interval=datetime.timedelta(seconds=2)),
+            ctx.schedule_task(hello, "3", interval=datetime.timedelta(seconds=2)),
+        )
+        await timemachine.step(datetime.timedelta(seconds=10))
+        await asyncio.gather(
+            ctx.unschedule_task(hello, "1"),
+            ctx.unschedule_task(hello, "2"),
+            ctx.unschedule_task(hello, "3"),
+        )
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 15
+
+
+@pytest.mark.asyncio
+async def test_dynamic_successful_task_interval_invalid_batch_size(
+    timemachine, backend
+):
+    app = Pyncette(**backend.get_args(timemachine), batch_size=0)
+    with pytest.raises(ValueError):
+        async with app.create():
+            pass  # pragma: no cover
 
 
 @pytest.mark.asyncio
@@ -959,6 +1028,34 @@ async def test_lease_is_not_lost_if_heartbeating(timemachine, backend):
 
 
 @pytest.mark.asyncio
+async def test_heartbeating_noop_on_best_effort_tasks(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(
+        interval=datetime.timedelta(seconds=6),
+        execution_mode=ExecutionMode.AT_MOST_ONCE,
+    )
+    async def successful_task(context: Context) -> None:
+        counter.lease(context._lease)
+        await context.heartbeat()
+        counter.lease(context._lease)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    lease1 = counter.lease.call_args_list[0][0][0]
+    lease2 = counter.lease.call_args_list[1][0][0]
+
+    assert lease1 is lease2
+
+
+@pytest.mark.asyncio
 async def test_heartbeat_fails_if_lease_lost(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine))
 
@@ -989,19 +1086,27 @@ async def test_heartbeat_fails_if_lease_lost(timemachine, backend):
 
 
 @pytest.mark.asyncio
-async def test_automatic_heartbeating(timemachine, backend):
+async def test_automatic_heartbeating_lease_expired(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
+
+    leases = []
 
     @app.task(
         interval=datetime.timedelta(seconds=1),
         lease_duration=datetime.timedelta(seconds=1),
     )
-    @with_heartbeat()
+    @with_heartbeat(cancel_on_lease_lost=False)
     async def successful_task(context: Context) -> None:
-        counter()
+        counter.started()
+
+        # Fake getting an old lease for the 2nd execution
+        leases.append(context._lease)
+        context._lease = leases[0]
+
         await asyncio.sleep(6)
+        counter.finished()
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
@@ -1010,4 +1115,39 @@ async def test_automatic_heartbeating(timemachine, backend):
         await task
         await timemachine.unwind()
 
-    assert counter.call_count == 2
+    assert counter.started.call_count == 4
+    assert counter.finished.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_automatic_heartbeating_cancel_on_lease_expired(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    leases = []
+
+    @app.task(
+        interval=datetime.timedelta(seconds=1),
+        lease_duration=datetime.timedelta(seconds=1),
+    )
+    @with_heartbeat(cancel_on_lease_lost=True)
+    async def successful_task(context: Context) -> None:
+        counter.started()
+
+        # Fake getting an old lease for the 2nd execution
+        leases.append(context._lease)
+        context._lease = leases[0]
+
+        await asyncio.sleep(6)
+        counter.finished()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.started.call_count == 4
+    assert counter.finished.call_count == 1
