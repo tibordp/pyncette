@@ -2,6 +2,16 @@
 Changelog
 =========
 
+0.7.0 (2021-03-31)
+------------------
+
+* Added support for automatic and cooperative lease heartbeating
+* PostgreSQL backend can now skip automatic table creation
+* Improved signal handling
+* CI: Add Codecov integration
+* Devenv: Run integration tests in Docker Compose
+
+
 0.6.1 (2020-04-02)
 ------------------
 
