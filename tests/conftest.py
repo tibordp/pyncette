@@ -10,6 +10,7 @@ import pytest
 from utils.timemachine import TimeMachine
 
 import pyncette
+from pyncette.dynamodb import dynamodb_repository
 from pyncette.postgres import postgres_repository
 from pyncette.redis import redis_repository
 from pyncette.sqlite import sqlite_repository
@@ -84,6 +85,21 @@ class SqlitePersistedBackend:
         }
 
 
+class DynamoDBBackend:
+    __name__ = "dynamodb"
+    is_persistent = True
+
+    def get_args(self, timemachine):
+        return {
+            "repository_factory": wrap_factory(dynamodb_repository, timemachine),
+            "dynamodb_table_name": random_table_name(),
+            "dynamodb_region_name": "eu-west-1",
+            "dynamodb_endpoint": os.environ.get(
+                "DYNAMODB_ENDPOINT", "http://localhost:4566"
+            ),
+        }
+
+
 class DefaultBackend:
     __name__ = "default"
     is_persistent = False
@@ -95,6 +111,7 @@ class DefaultBackend:
 all_backends = [
     PostgresBackend(),
     RedisBackend(),
+    DynamoDBBackend(),
     DefaultBackend(),
     SqlitePersistedBackend(),
 ]

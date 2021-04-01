@@ -131,9 +131,12 @@ To run the all tests run::
 Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
 so that integration tests can run seamlessly::
 
+    # If you want the Docker environment to run as current user
+    # to avoid writing files as root.
+    export UID_GID="$(id -u):$(id -g)"
     docker-compose up -d
     docker-compose run --rm shell
-    tox -e integration
+    tox
 
 To run just the unit tests (excluding integration tests)::
 

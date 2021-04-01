@@ -113,12 +113,12 @@ class PyncetteContext:
             return
 
         assert context._lease is not None
-        new_lease = await self._repository.extend_lease(utc_now, task, context._lease)
-        if new_lease is None:
-            context._lease = None
+        context._lease = await self._repository.extend_lease(
+            utc_now, task, context._lease
+        )
+
+        if context._lease is None:
             raise LeaseLostException(task)
-        else:
-            context._lease = new_lease
 
     def _populate_context(self, task: Task, poll_response: PollResponse) -> Context:
         assert self._root_context is not None
@@ -215,7 +215,7 @@ class PyncetteContext:
             elif poll_response.result == ResultType.LOCKED:
                 logger.debug(f"Not executing task {task}, because it is locked.")
             else:
-                logger.warn(
+                logger.warning(
                     f"Unexpected poll response for {task}: {poll_response.result}"
                 )
 
@@ -403,6 +403,11 @@ class Pyncette:
         coloredlogs.install(
             level=os.environ.get("LOG_LEVEL", "INFO"), milliseconds=True
         )
+
+        if os.environ.get("USE_UVLOOP", False):
+            import uvloop
+
+            uvloop.install()
 
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self._run_main())

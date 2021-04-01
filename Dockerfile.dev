@@ -1,4 +1,25 @@
-FROM python:3.8
-RUN apt-get update && apt-get install -y redis-tools postgresql-client
-RUN pip3 install tox
+FROM ubuntu:latest
+ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update -y \
+    && apt-get install -y software-properties-common
+RUN add-apt-repository ppa:deadsnakes/ppa
+RUN apt-get update -y \
+    && apt-get install -y \
+        python3.7 \
+        python3.8 \
+        python3.9 \
+        python3-pip \
+        redis-tools \
+        postgresql-client \
+        git \
+        curl \ 
+        unzip \
+        groff \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+    && unzip awscliv2.zip \
+    && ./aws/install
+
+RUN python3 -m pip install tox awscli-local[ver2]

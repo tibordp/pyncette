@@ -15,6 +15,7 @@ import uuid
 
 from pyncette import Context
 from pyncette import FailureMode
+from pyncette import Pyncette
 from pyncette.redis import redis_repository
 
 logger = logging.getLogger(__name__)

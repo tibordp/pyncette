@@ -6,28 +6,26 @@ import time
 
 
 def test_signal_handling():
-    os.environ["LOG_LEVEL"] = "DEBUG"
-
     with subprocess.Popen(
-        ["coverage", "run", "-m", "tests.test_pyncette_process"]
+        ["coverage", "run", "-m", "tests.test_pyncette_process"],
+        env={**os.environ, "LOG_LEVEL": "DEBUG"},
     ) as proc:
         time.sleep(2)
-        proc.send_signal(signal.SIGTERM)
+        proc.send_signal(signal.SIGINT)
         ret_code = proc.wait()
 
     assert ret_code == 0
 
 
 def test_signal_handling_force():
-    os.environ["LOG_LEVEL"] = "DEBUG"
-
     with subprocess.Popen(
-        ["coverage", "run", "-m", "tests.test_pyncette_process"]
+        ["coverage", "run", "-m", "tests.test_pyncette_process"],
+        env={**os.environ, "LOG_LEVEL": "DEBUG"},
     ) as proc:
         time.sleep(2)
-        proc.send_signal(signal.SIGTERM)
+        proc.send_signal(signal.SIGINT)
         time.sleep(1)
-        proc.send_signal(signal.SIGTERM)
+        proc.send_signal(signal.SIGINT)
         ret_code = proc.wait()
 
     assert ret_code != 0
@@ -43,6 +41,6 @@ if __name__ == "__main__":
 
     @app.task(interval=datetime.timedelta(seconds=1))
     async def foo(context: Context):
-        await asyncio.sleep(3)
+        await asyncio.sleep(5)
 
     app.main()
