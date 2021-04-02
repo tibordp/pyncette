@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import datetime
 import json
 import logging
@@ -13,11 +14,15 @@ from typing import Dict
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import cast
 
 import aioboto3
+from boto3.dynamodb.conditions import Attr
 from boto3.dynamodb.conditions import Key
+from botocore.exceptions import ClientError
 
 from pyncette.errors import PyncetteException
+from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
 from pyncette.model import QueryResponse
@@ -29,8 +34,31 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class _DynamoDBLease:
-    pass
+class _TaskRecord:
+    execute_after: Optional[datetime.datetime]
+    locked_until: Optional[datetime.datetime]
+    locked_by: Optional[str]
+    version: int
+
+    @staticmethod
+    def _parse_date(s: Optional[str]):
+        return datetime.datetime.fromisoformat(s) if s else None
+
+    @classmethod
+    def from_dynamo_response(cls, response: Any) -> Optional[_TaskRecord]:
+        if "Item" not in response:
+            return None
+
+        record = response["Item"]
+        return cls(
+            execute_after=cls._parse_date(record.get("execute_after")),
+            locked_until=cls._parse_date(record.get("locked_until")),
+            locked_by=record["locked_by"],
+            version=int(record["version"]),
+        )
+
+
+MAX_OPTIMISTIC_RETRY_COUNT = 5
 
 
 class DynamoDBRepository(Repository):
@@ -40,12 +68,20 @@ class DynamoDBRepository(Repository):
     _table_name: str
     _batch_size: int
     _skip_table_create: bool
+    _partition_prefix: str
 
-    def __init__(self, dynamo_resource: Any, skip_table_create: bool, **kwargs: Any):
+    def __init__(
+        self,
+        dynamo_resource: Any,
+        skip_table_create: bool,
+        partition_prefix: str,
+        **kwargs: Any,
+    ):
         self._dynamo_resource = dynamo_resource
         self._table_name = kwargs.get("dynamodb_table_name", "")
         self._batch_size = kwargs.get("batch_size", 100)
         self._skip_table_create = skip_table_create
+        self._partition_prefix = partition_prefix
 
         if self._batch_size < 1:
             raise ValueError("Batch size must be greater than 0")
@@ -53,200 +89,303 @@ class DynamoDBRepository(Repository):
     async def poll_dynamic_task(
         self, utc_now: datetime.datetime, task: Task
     ) -> QueryResponse:
-        new_locked_until = utc_now + task.lease_duration
-        response = await self._poll_dynamic_script.execute(
-            self._redis_client,
-            keys=[self._get_task_index_key(task)],
-            args=[
-                utc_now.isoformat(),
-                self._batch_size,
-                new_locked_until.isoformat(),
-                str(uuid.uuid4()),
-            ],
-        )
-        logger.debug(f"query_lua script returned [{self._batch_size}] {response}")
-
-        return QueryResponse(
-            tasks=[
-                _create_dynamic_task(task, response_data)
-                for response_data in response[1:]
-            ],
-            has_more=response[0] == b"HAS_MORE",
-        )
+        raise NotImplementedError()
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        execute_after = task.get_next_execution(utc_now, None)
-        assert execute_after is not None
-
-        await self._manage_record(
-            task,
-            "REGISTER",
-            execute_after.isoformat(),
-            json.dumps(task.as_spec()),
-        )
+        raise NotImplementedError()
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        await self._manage_record(task, "UNREGISTER")
+        raise NotImplementedError()
 
     def _get_partition_id(self, task: Task):
+        prefix = (self._partition_prefix or "").replace(":", "::")
         if task.parent_task:
-            return task.parent_task.canonical_name
+            return f"{prefix}:{task.parent_task.canonical_name}"
         else:
-            return task.canonical_name
+            return f"{prefix}:{task.canonical_name}"
+
+    async def _retreive_item(
+        self, task: Task, consistent_read: bool = False
+    ) -> Optional[_TaskRecord]:
+        result = _TaskRecord.from_dynamo_response(
+            await self._table.get_item(
+                Key={
+                    "partition_id": self._get_partition_id(task),
+                    "task_id": task.canonical_name,
+                },
+                ConsistentRead=consistent_read,
+            )
+        )
+        return result
+
+    async def _update_item(self, task: Task, record: _TaskRecord):
+        if record.execute_after is None:
+            await self._table.delete_item(
+                Key={
+                    "partition_id": self._get_partition_id(task),
+                    "task_id": task.canonical_name,
+                },
+                ConditionExpression=Attr("version").eq(record.version - 1),
+            )
+            task._last_lease = None
+        else:
+            ready_at = (
+                max(record.execute_after, record.locked_until)
+                if record.locked_until is not None
+                else record.execute_after
+            )
+
+            current_version = record.version
+            await self._table.update_item(
+                Key={
+                    "partition_id": self._get_partition_id(task),
+                    "task_id": task.canonical_name,
+                },
+                UpdateExpression="""
+                set execute_after=:execute_after,
+                    locked_until=:locked_until,
+                    locked_by=:locked_by,
+                    ready_at=:ready_at,
+                    version=:version
+                """,
+                ExpressionAttributeValues={
+                    ":execute_after": record.execute_after.isoformat()
+                    if record.execute_after is not None
+                    else "",
+                    ":locked_until": record.locked_until.isoformat()
+                    if record.locked_until is not None
+                    else "",
+                    ":locked_by": record.locked_by,
+                    # Add a suffix to ready_at to guarantee uniqueness of the secondary index
+                    ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
+                    ":version": current_version + 1,
+                },
+                ConditionExpression=(
+                    Attr("version").not_exists() or Attr("version").eq(0)
+                )
+                if current_version == 0
+                else Attr("version").eq(current_version),
+            )
+            record.version = current_version + 1
+            task._last_lease = record
 
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
     ) -> PollResponse:
-        record = await _table.get_item(
-            Key={
-                "partition_id": _get_partition_id(task),
-                "task_id": task.canonical_name,
-            }
-        )
+        last_lease = getattr(task, "_last_lease", None)
 
-        if "Item" not in records:
-            if task.parent_task is not None:
-                raise PyncetteException("Task not found")
-
-            execute_after = task.get_next_execution(utc_now, None)
-            locked_until = None
-            locked_by = None
-            update = True
-            version = 0
+        # Similar logic as in Redis repository. If we have previously processed this
+        # task in any manner, we try to reuse the latest state of the task we have at hand
+        # from cache (or lease) to avoid two roundtrips to DynamoDB in the optimistic case.
+        # If we are wrong, we will get a version mismatch, wehereby we will load the current
+        # state from DB.
+        # TODO: There is an edge case. If the cached value for the task indicates that it is
+        # still locked, but is unlocked early, we might not start executing until the lease
+        # actually expires, since we do not perform any calls to DB at all. In this case we may
+        # want to always fetch to be extra sure.
+        if lease is not None:
+            assert isinstance(lease, _TaskRecord)
+            record = cast(_TaskRecord, copy.copy(lease))
+        elif last_lease is not None:
+            logger.debug("Using cached values for last lease")
+            assert isinstance(last_lease, _TaskRecord)
+            record = cast(_TaskRecord, copy.copy(last_lease))
         else:
-            record = records["Item"]
-            execute_after = record["execute_after"]
-            locked_until = record["locked_until"]
-            locked_by = record["locked_by"]
-            version = record["version"]
+            record = await self._retreive_item(task)
 
-        assert execute_after is not None
-        scheduled_at = execute_after
+        for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            update = False
+            if record is None:
+                if task.parent_task is not None:
+                    raise PyncetteException("Task not found")
 
-        if locked_until is not None and locked_until > utc_now and (lease != locked_by):
-            result = ResultType.LOCKED
-        elif (
-            execute_after <= utc_now
-            and task.execution_mode == ExecutionMode.AT_MOST_ONCE
-        ):
-            execute_after = task.get_next_execution(utc_now, execute_after)
-            result = ResultType.READY
-            locked_until = None
-            locked_by = None
-            update = True
-        elif (
-            execute_after <= utc_now
-            and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
-        ):
-            locked_until = utc_now + task.lease_duration
-            locked_by = uuid.uuid4()
-            result = ResultType.READY
-            update = True
-        else:
-            result = ResultType.PENDING
+                record = _TaskRecord(
+                    execute_after=task.get_next_execution(utc_now, None),
+                    locked_until=None,
+                    locked_by=None,
+                    version=0,
+                )
+                update = True
 
-        if update:
-            await self._update_record(
-                connection,
-                task,
-                locked_until,
-                locked_by,
-                execute_after,
+            assert record.execute_after is not None
+            scheduled_at = record.execute_after
+
+            if (
+                record.locked_until is not None
+                and record.locked_until > utc_now
+                and (lease is None or lease.locked_by != record.locked_by)
+            ):
+                result = ResultType.LOCKED
+            elif (
+                record.execute_after <= utc_now
+                and task.execution_mode == ExecutionMode.AT_MOST_ONCE
+            ):
+                record.execute_after = task.get_next_execution(
+                    utc_now, record.execute_after
+                )
+                result = ResultType.READY
+                record.locked_until = None
+                record.locked_by = None
+                update = True
+            elif (
+                record.execute_after <= utc_now
+                and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
+            ):
+                record.locked_until = utc_now + task.lease_duration
+                record.locked_by = str(uuid.uuid4())
+                result = ResultType.READY
+                update = True
+            else:
+                result = ResultType.PENDING
+
+            if update:
+                try:
+                    await self._update_item(task, record)
+                except ClientError as e:
+                    if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                        record = await self._retreive_item(task, consistent_read=True)
+                        continue
+                    else:
+                        raise
+
+            return PollResponse(
+                result=result, scheduled_at=scheduled_at, lease=Lease(record)
             )
 
-        return PollResponse(result=result, scheduled_at=scheduled_at, lease=locked_by)
+        raise PyncetteException(
+            "Unable to acquire the lock on the task due to contention"
+        )
 
     async def commit_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(lease, _ManageScriptResponse)
-        next_execution = task.get_next_execution(utc_now, lease.execute_after)
-        response = await self._manage_record(
-            task,
-            "COMMIT",
-            lease.version,
-            lease.locked_by,
-            next_execution.isoformat() if next_execution is not None else "",
+        assert isinstance(lease, _TaskRecord)
+        record = cast(_TaskRecord, copy.copy(lease))
+
+        for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            if record.locked_by != lease.locked_by:
+                logger.warning(f"Lease lost on task {task}, skipping.")
+                return
+
+            record.execute_after = task.get_next_execution(utc_now, lease.execute_after)
+            record.locked_by = None
+            record.locked_until = None
+
+            try:
+                await self._update_item(task, record)
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    record = await self._retreive_item(task, consistent_read=True)
+                    # TODO: Determine if it is safe to assume that if the version does
+                    # not match, we can bail out early and not retry the loop.
+                    continue
+                else:
+                    raise
+
+            return
+
+        raise PyncetteException(
+            "Unable to acquire the lock on the task due to contention"
         )
-        task._last_lease = response  # type: ignore
-        if response.result == ResultType.LEASE_MISMATCH:
-            logger.info("Not commiting, as we have lost the lease")
 
     async def unlock_task(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
-        assert isinstance(lease, _ManageScriptResponse)
-        response = await self._manage_record(
-            task, "UNLOCK", lease.version, lease.locked_by
+        assert isinstance(lease, _TaskRecord)
+        record = cast(_TaskRecord, copy.copy(lease))
+
+        for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            if record.locked_by != lease.locked_by:
+                logger.warning(f"Lease lost on task {task}, skipping.")
+                return
+
+            record.locked_by = None
+            record.locked_until = None
+
+            try:
+                await self._update_item(task, record)
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    record = await self._retreive_item(task, consistent_read=True)
+                    # TODO: Determine if it is safe to assume that if the version does
+                    # not match, we can bail out early and not retry the loop.
+                    continue
+                else:
+                    raise
+
+            return
+
+        raise PyncetteException(
+            "Unable to acquire the lock on the task due to contention"
         )
-        task._last_lease = response  # type: ignore
-        if response.result == ResultType.LEASE_MISMATCH:
-            logger.info("Not unlocking, as we have lost the lease")
 
     async def extend_lease(
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> Optional[Lease]:
-        assert isinstance(lease, _ManageScriptResponse)
-        new_locked_until = utc_now + task.lease_duration
-        response = await self._manage_record(
-            task, "EXTEND", lease.version, lease.locked_by, new_locked_until.isoformat()
+        assert isinstance(lease, _TaskRecord)
+        record = cast(_TaskRecord, copy.copy(lease))
+
+        for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            if record.locked_by != lease.locked_by:
+                logger.warning(f"Lease lost on task {task}, skipping.")
+                return None
+
+            record.locked_until = utc_now + task.lease_duration
+
+            try:
+                await self._update_item(task, record)
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                    record = await self._retreive_item(task, consistent_read=True)
+                    continue
+                else:
+                    raise
+
+            return Lease(record)
+
+        raise PyncetteException(
+            "Unable to acquire the lock on the task due to contention"
         )
-        task._last_lease = response  # type: ignore
-
-        if response.result == ResultType.READY:
-            return Lease(response)
-        else:
-            return None
-
-    async def _manage_record(self, task: Task, *args: Any) -> _ManageScriptResponse:
-        response = await self._manage_script.execute(
-            self._redis_client,
-            keys=[
-                self._get_task_record_key(task),
-                self._get_task_index_key(task.parent_task),
-            ],
-            args=list(args),
-        )
-        logger.debug(f"manage_lua script returned {response}")
-        return _ManageScriptResponse.from_response(response)
-
-    def _get_task_record_key(self, task: Task) -> str:
-        return f"pyncette:{self._namespace}:task:{task.canonical_name}"
-
-    def _get_task_index_key(self, task: Optional[Task]) -> str:
-        # A prefix-coded index key, so there are no restrictions on task names.
-        index_name = f"index:{task.canonical_name}" if task else "index"
-        return f"pyncette:{self._namespace}:{index_name}"
 
     async def initialize(self):
+        self._table = await self._dynamo_resource.Table(self._table_name)
         if not self._skip_table_create:
-            self._table = await self._dynamo_resource.create_table(
-                TableName=self._table_name,
-                KeySchema=[
-                    {"AttributeName": "partition_id", "KeyType": "HASH"},
-                    {"AttributeName": "task_id", "KeyType": "RANGE"},
-                ],
-                AttributeDefinitions=[
-                    {"AttributeName": "partition_id", "AttributeType": "S"},
-                    {"AttributeName": "task_id", "AttributeType": "S"},
-                    {"AttributeName": "ready_at", "AttributeType": "S"},
-                ],
-                LocalSecondaryIndexes=[
-                    {
-                        "IndexName": "execute_at",
-                        "KeySchema": [
+            try:
+                await self._table.load()
+                logger.info("Table already exists...")
+            except ClientError as e:
+                if e.response["Error"]["Code"] == "ResourceNotFoundException":
+                    self._table = await self._dynamo_resource.create_table(
+                        TableName=self._table_name,
+                        KeySchema=[
                             {"AttributeName": "partition_id", "KeyType": "HASH"},
-                            {"AttributeName": "ready_at", "KeyType": "RANGE"},
+                            {"AttributeName": "task_id", "KeyType": "RANGE"},
                         ],
-                        "Projection": {"ProjectionType": "ALL"},
-                    }
-                ],
-                ProvisionedThroughput={"ReadCapacityUnits": 3, "WriteCapacityUnits": 3},
-            )
-            logger.info("Waiting until table is created...")
-            await self._table.wait_until_exists()
-        else:
-            self._table = await self._dynamo_resource.Table(self._table_name)
+                        AttributeDefinitions=[
+                            {"AttributeName": "partition_id", "AttributeType": "S"},
+                            {"AttributeName": "task_id", "AttributeType": "S"},
+                            {"AttributeName": "ready_at", "AttributeType": "S"},
+                        ],
+                        LocalSecondaryIndexes=[
+                            {
+                                "IndexName": "execute_at",
+                                "KeySchema": [
+                                    {
+                                        "AttributeName": "partition_id",
+                                        "KeyType": "HASH",
+                                    },
+                                    {"AttributeName": "ready_at", "KeyType": "RANGE"},
+                                ],
+                                "Projection": {"ProjectionType": "ALL"},
+                            }
+                        ],
+                        ProvisionedThroughput={
+                            "ReadCapacityUnits": 3,
+                            "WriteCapacityUnits": 3,
+                        },
+                    )
+                    logger.info("Waiting until table is created...")
+                    await self._table.wait_until_exists()
 
 
 @contextlib.asynccontextmanager
@@ -254,6 +393,7 @@ async def dynamodb_repository(
     dynamodb_endpoint: Optional[str] = None,
     dynamodb_region_name: Optional[str] = None,
     dynamodb_skip_table_create: bool = False,
+    dynamodb_partition_prefix: str = "",
     **kwargs: Any,
 ) -> AsyncIterator[RedisRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
@@ -263,7 +403,10 @@ async def dynamodb_repository(
         endpoint_url=dynamodb_endpoint,
     ) as dynamo_resource:
         repository = DynamoDBRepository(
-            dynamo_resource, skip_table_create=dynamodb_skip_table_create, **kwargs
+            dynamo_resource,
+            skip_table_create=dynamodb_skip_table_create,
+            partition_prefix=dynamodb_partition_prefix,
+            **kwargs,
         )
         await repository.initialize()
         yield repository

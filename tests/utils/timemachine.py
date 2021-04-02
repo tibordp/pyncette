@@ -66,7 +66,7 @@ class TimeMachine:
             ScheduledTask(self.offset + datetime.timedelta(seconds=delay), future),
         )
         future.add_done_callback(self._remove_cancelled_sleep)
-        logger.info(
+        logger.debug(
             f"Registering sleep {id(future)} for {delay}s (resume at T+{self.offset + datetime.timedelta(seconds=delay)})"
         )
         return future
@@ -148,7 +148,7 @@ class TimeMachine:
                     if callback.future is not fut
                 ]
                 heapq.heapify(self.callbacks)
-                logger.info(f"Removed cancelled sleep {id(fut)}")
+                logger.debug(f"Removed cancelled sleep {id(fut)}")
             except ValueError:
                 pass
 
@@ -169,4 +169,4 @@ class TimeMachine:
     def _update_offset(self, new_offset):
         if self.offset != new_offset:
             self.offset = new_offset
-            logger.info(f"Jumped to T+{new_offset.total_seconds()}s")
+            logger.debug(f"Jumped to T+{new_offset.total_seconds()}s")
