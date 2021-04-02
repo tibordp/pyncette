@@ -1,7 +1,5 @@
-import datetime
 import os
 
-import asyncpg
 import pytest
 from conftest import random_table_name
 

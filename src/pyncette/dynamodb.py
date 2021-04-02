@@ -7,13 +7,10 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass
-from importlib.resources import read_text
 from typing import Any
 from typing import AsyncIterator
 from typing import Dict
-from typing import List
 from typing import Optional
-from typing import Tuple
 from typing import cast
 
 import aioboto3
@@ -41,7 +38,7 @@ class _TaskRecord:
     version: int
 
     @staticmethod
-    def _parse_date(s: Optional[str]):
+    def _parse_date(s: Optional[str]) -> Optional[datetime.datetime]:
         return datetime.datetime.fromisoformat(s) if s else None
 
     @classmethod
@@ -49,7 +46,10 @@ class _TaskRecord:
         if "Item" not in response:
             return None
 
-        record = response["Item"]
+        return cls.from_dynamo_item(response["Item"])
+
+    @classmethod
+    def from_dynamo_item(cls, record: Dict[str, Any]) -> _TaskRecord:
         return cls(
             execute_after=cls._parse_date(record.get("execute_after")),
             locked_until=cls._parse_date(record.get("locked_until")),
@@ -89,15 +89,51 @@ class DynamoDBRepository(Repository):
     async def poll_dynamic_task(
         self, utc_now: datetime.datetime, task: Task
     ) -> QueryResponse:
-        raise NotImplementedError()
+        response = await self._table.query(
+            IndexName="ready_at",
+            Select="ALL_ATTRIBUTES",
+            Limit=self._batch_size,
+            KeyConditionExpression=Key("partition_id").eq(self._get_partition_id(task))
+            & Key("ready_at").lt(f"{utc_now.isoformat()}`"),
+        )
+
+        return QueryResponse(
+            tasks=[
+                (
+                    task.instantiate_from_spec(json.loads(record["task_spec"])),
+                    Lease(_TaskRecord.from_dynamo_item(record)),
+                )
+                for record in response["Items"]
+            ],
+            has_more="LastEvaluatedKey" in response,
+        )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        raise NotImplementedError()
+        execute_after = task.get_next_execution(utc_now, None)
+        assert execute_after is not None
+
+        await self._table.put_item(
+            Item={
+                "partition_id": self._get_partition_id(task),
+                "task_id": task.canonical_name,
+                "task_spec": json.dumps(task.as_spec()),
+                "version": 0,
+                "locked_by": None,
+                "locked_until": None,
+                "execute_after": execute_after.isoformat(),
+                "ready_at": f"{execute_after.isoformat()}_{task.canonical_name}",
+            },
+        )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        raise NotImplementedError()
+        await self._table.delete_item(
+            Key={
+                "partition_id": self._get_partition_id(task),
+                "task_id": task.canonical_name,
+            }
+        )
 
-    def _get_partition_id(self, task: Task):
+    def _get_partition_id(self, task: Task) -> str:
         prefix = (self._partition_prefix or "").replace(":", "::")
         if task.parent_task:
             return f"{prefix}:{task.parent_task.canonical_name}"
@@ -118,24 +154,28 @@ class DynamoDBRepository(Repository):
         )
         return result
 
-    async def _update_item(self, task: Task, record: _TaskRecord):
+    async def _update_item(self, task: Task, record: _TaskRecord) -> None:
+        current_version = record.version
+
         if record.execute_after is None:
             await self._table.delete_item(
                 Key={
                     "partition_id": self._get_partition_id(task),
                     "task_id": task.canonical_name,
                 },
-                ConditionExpression=Attr("version").eq(record.version - 1),
+                ConditionExpression=(
+                    Attr("version").not_exists() | Attr("version").eq(0)
+                )
+                if current_version == 0
+                else Attr("version").eq(current_version),
             )
-            task._last_lease = None
+            task._last_lease = None  # type: ignore
         else:
             ready_at = (
                 max(record.execute_after, record.locked_until)
                 if record.locked_until is not None
                 else record.execute_after
             )
-
-            current_version = record.version
             await self._table.update_item(
                 Key={
                     "partition_id": self._get_partition_id(task),
@@ -161,13 +201,13 @@ class DynamoDBRepository(Repository):
                     ":version": current_version + 1,
                 },
                 ConditionExpression=(
-                    Attr("version").not_exists() or Attr("version").eq(0)
+                    Attr("version").not_exists() | Attr("version").eq(0)
                 )
                 if current_version == 0
                 else Attr("version").eq(current_version),
             )
             record.version = current_version + 1
-            task._last_lease = record
+            task._last_lease = record  # type: ignore
 
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
@@ -183,6 +223,7 @@ class DynamoDBRepository(Repository):
         # still locked, but is unlocked early, we might not start executing until the lease
         # actually expires, since we do not perform any calls to DB at all. In this case we may
         # want to always fetch to be extra sure.
+        record: Optional[_TaskRecord]
         if lease is not None:
             assert isinstance(lease, _TaskRecord)
             record = cast(_TaskRecord, copy.copy(lease))
@@ -209,7 +250,7 @@ class DynamoDBRepository(Repository):
 
             assert record.execute_after is not None
             scheduled_at = record.execute_after
-
+            logger.info(repr(record))
             if (
                 record.locked_until is not None
                 and record.locked_until > utc_now
@@ -220,10 +261,10 @@ class DynamoDBRepository(Repository):
                 record.execute_after <= utc_now
                 and task.execution_mode == ExecutionMode.AT_MOST_ONCE
             ):
+                result = ResultType.READY
                 record.execute_after = task.get_next_execution(
                     utc_now, record.execute_after
                 )
-                result = ResultType.READY
                 record.locked_until = None
                 record.locked_by = None
                 update = True
@@ -231,17 +272,20 @@ class DynamoDBRepository(Repository):
                 record.execute_after <= utc_now
                 and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
             ):
+                result = ResultType.READY
                 record.locked_until = utc_now + task.lease_duration
                 record.locked_by = str(uuid.uuid4())
-                result = ResultType.READY
                 update = True
             else:
                 result = ResultType.PENDING
+
+            logger.warning(repr(record))
 
             if update:
                 try:
                     await self._update_item(task, record)
                 except ClientError as e:
+                    logger.error(e)
                     if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                         record = await self._retreive_item(task, consistent_read=True)
                         continue
@@ -260,9 +304,13 @@ class DynamoDBRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         assert isinstance(lease, _TaskRecord)
-        record = cast(_TaskRecord, copy.copy(lease))
+        record: Optional[_TaskRecord] = cast(_TaskRecord, copy.copy(lease))
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            if not record:
+                logger.warning(f"Task {task} no longer exists, skipping.")
+                return
+
             if record.locked_by != lease.locked_by:
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
@@ -292,9 +340,13 @@ class DynamoDBRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> None:
         assert isinstance(lease, _TaskRecord)
-        record = cast(_TaskRecord, copy.copy(lease))
+        record: Optional[_TaskRecord] = cast(_TaskRecord, copy.copy(lease))
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            if not record:
+                logger.warning(f"Task {task} no longer exists, skipping.")
+                return
+
             if record.locked_by != lease.locked_by:
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
@@ -323,9 +375,13 @@ class DynamoDBRepository(Repository):
         self, utc_now: datetime.datetime, task: Task, lease: Lease
     ) -> Optional[Lease]:
         assert isinstance(lease, _TaskRecord)
-        record = cast(_TaskRecord, copy.copy(lease))
+        record: Optional[_TaskRecord] = cast(_TaskRecord, copy.copy(lease))
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            if not record:
+                logger.warning(f"Task {task} no longer exists, skipping.")
+                return None
+
             if record.locked_by != lease.locked_by:
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return None
@@ -347,7 +403,7 @@ class DynamoDBRepository(Repository):
             "Unable to acquire the lock on the task due to contention"
         )
 
-    async def initialize(self):
+    async def initialize(self) -> None:
         self._table = await self._dynamo_resource.Table(self._table_name)
         if not self._skip_table_create:
             try:
@@ -368,7 +424,7 @@ class DynamoDBRepository(Repository):
                         ],
                         LocalSecondaryIndexes=[
                             {
-                                "IndexName": "execute_at",
+                                "IndexName": "ready_at",
                                 "KeySchema": [
                                     {
                                         "AttributeName": "partition_id",
@@ -395,7 +451,7 @@ async def dynamodb_repository(
     dynamodb_skip_table_create: bool = False,
     dynamodb_partition_prefix: str = "",
     **kwargs: Any,
-) -> AsyncIterator[RedisRepository]:
+) -> AsyncIterator[DynamoDBRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
     async with aioboto3.resource(
         "dynamodb",
