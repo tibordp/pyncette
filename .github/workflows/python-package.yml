@@ -70,7 +70,7 @@ jobs:
         ports:
           - 4566:4566
         options: >-
-          --health-cmd "curl -fso /dev/null http://localhost:4566"
+          --health-cmd "curl -fso /dev/null http://localhost:4566/health"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
