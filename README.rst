@@ -126,12 +126,14 @@ Pyncette is designed for reliable (at-least-once by default) execution of recurr
 lifecycles are managed dynamically, but can work effectively as a general-purpose task scheduler and executor.
 
 Example use cases:
+
 - You want to perform a database backup every day at noon
 - You want a report to be generated daily for your 10M users at the time of their choosing
 - You want currency conversion rates to be refreshed every 10 seconds
 - You want to allow your users to schedule particular emails to be sent (just once) at an arbitrary time in the future
 
 Pyncette might not be a good fit if:
+
 - You need tasks to execute at sub one second intervals with low jitter
 
 

@@ -4,7 +4,6 @@ import pytest
 from conftest import random_table_name
 
 from pyncette import dynamodb
-from pyncette.task import Task
 
 DYNAMODB_ENDPOINT = os.environ.get("DYNAMODB_ENDPOINT", "http://localhost:4566")
 

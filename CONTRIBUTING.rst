@@ -49,7 +49,7 @@ To set up `pyncette` for local development:
 
    Now you can make your changes locally.
 
-4. Running integration tests requires a Redis server running on localhost. Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
+4. Running integration tests assumes that there will be Redis, PostgreSQL and Localstack (for DynamoDB) running on localhost. Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
 so that integration tests can run seamlessly::
 
     docker-compose up -d
