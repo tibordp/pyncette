@@ -217,7 +217,7 @@ class DynamoDBRepository(Repository):
         # Similar logic as in Redis repository. If we have previously processed this
         # task in any manner, we try to reuse the latest state of the task we have at hand
         # from cache (or lease) to avoid two roundtrips to DynamoDB in the optimistic case.
-        # If we are wrong, we will get a version mismatch, wehereby we will load the current
+        # If we are wrong, we will get a version mismatch, whereby we will load the current
         # state from DB.
         # TODO: There is an edge case. If the cached value for the task indicates that it is
         # still locked, but is unlocked early, we might not start executing until the lease
@@ -250,7 +250,7 @@ class DynamoDBRepository(Repository):
 
             assert record.execute_after is not None
             scheduled_at = record.execute_after
-            logger.info(repr(record))
+
             if (
                 record.locked_until is not None
                 and record.locked_until > utc_now
@@ -279,13 +279,10 @@ class DynamoDBRepository(Repository):
             else:
                 result = ResultType.PENDING
 
-            logger.warning(repr(record))
-
             if update:
                 try:
                     await self._update_item(task, record)
                 except ClientError as e:
-                    logger.error(e)
                     if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                         record = await self._retreive_item(task, consistent_read=True)
                         continue

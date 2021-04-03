@@ -6,6 +6,7 @@ Submodules
 
 .. toctree::
 
+   pyncette.dynamodb
    pyncette.errors
    pyncette.model
    pyncette.postgres
