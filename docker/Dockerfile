@@ -8,7 +8,7 @@ ADD . /opt/pyncette
 RUN pip install /opt/pyncette[all] && rm -rf /opt/
 
 WORKDIR /pyncette
-ADD ./docker/app.py app.py
+ADD ./docker/entrypoint.py entrypoint.py
 
 EXPOSE 9699/tcp
 ENV USE_UVLOOP=1
