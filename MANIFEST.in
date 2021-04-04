@@ -10,6 +10,7 @@ exclude docker
 exclude docker-compose.yml
 exclude Dockerfile.dev
 
+include codecov.yml
 include .readthedocs.yml
 include .bumpversion.cfg
 include .coveragerc
