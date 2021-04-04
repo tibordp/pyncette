@@ -769,7 +769,7 @@ async def test_dynamic_poll_after_unregister(timemachine, backend):
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        counter.execute()
+        counter.execute()  # pragma: no cover
 
     async with app.create() as ctx:
         task_instance = await ctx.schedule_task(

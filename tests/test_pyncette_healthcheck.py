@@ -120,7 +120,7 @@ async def test_healthcheck_server_invalid_verb(timemachine):
     app = Pyncette(repository_factory=wrap_factory(sqlite_repository, timemachine))
 
     async def healthcheck_handler(app_context):
-        return True
+        pass  # pragma: no cover
 
     # Bind on random port to avoid conflict
     use_healthcheck_server(
