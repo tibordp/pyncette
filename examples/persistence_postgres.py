@@ -2,7 +2,7 @@
 
 This example stores the state of the scheduler in a PostgreSQL database.
 
-It is safe to run multiple instances of the app on the same machine, as the DB will be used for coordination.
+It is safe to run multiple instances of the app, as the DB will be used for coordination.
 
 """
 
@@ -26,6 +26,8 @@ app = Pyncette(
     postgres_table_name="example",
     # If set to true, Pyncette will assume the table exists and will not try to create it
     postgres_skip_table_create=False,
+    # Batch size for querying dynamic tasks
+    batch_size=10,
 )
 
 

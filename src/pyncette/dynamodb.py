@@ -29,6 +29,8 @@ from pyncette.task import Task
 
 logger = logging.getLogger(__name__)
 
+MAX_OPTIMISTIC_RETRY_COUNT = 5
+
 
 @dataclass
 class _TaskRecord:
@@ -56,9 +58,6 @@ class _TaskRecord:
             locked_by=record["locked_by"],
             version=int(record["version"]),
         )
-
-
-MAX_OPTIMISTIC_RETRY_COUNT = 5
 
 
 class DynamoDBRepository(Repository):
@@ -154,60 +153,67 @@ class DynamoDBRepository(Repository):
         )
         return result
 
-    async def _update_item(self, task: Task, record: _TaskRecord) -> None:
+    async def _update_item(self, task: Task, record: _TaskRecord) -> bool:
         current_version = record.version
-
-        if record.execute_after is None:
-            await self._table.delete_item(
-                Key={
-                    "partition_id": self._get_partition_id(task),
-                    "task_id": task.canonical_name,
-                },
-                ConditionExpression=(
-                    Attr("version").not_exists() | Attr("version").eq(0)
+        try:
+            if record.execute_after is None:
+                await self._table.delete_item(
+                    Key={
+                        "partition_id": self._get_partition_id(task),
+                        "task_id": task.canonical_name,
+                    },
+                    ConditionExpression=(
+                        Attr("version").not_exists() | Attr("version").eq(0)
+                    )
+                    if current_version == 0
+                    else Attr("version").eq(current_version),
                 )
-                if current_version == 0
-                else Attr("version").eq(current_version),
-            )
-            task._last_lease = None  # type: ignore
-        else:
-            ready_at = (
-                max(record.execute_after, record.locked_until)
-                if record.locked_until is not None
-                else record.execute_after
-            )
-            await self._table.update_item(
-                Key={
-                    "partition_id": self._get_partition_id(task),
-                    "task_id": task.canonical_name,
-                },
-                UpdateExpression="""
-                set execute_after=:execute_after,
-                    locked_until=:locked_until,
-                    locked_by=:locked_by,
-                    ready_at=:ready_at,
-                    version=:version
-                """,
-                ExpressionAttributeValues={
-                    ":execute_after": record.execute_after.isoformat()
-                    if record.execute_after is not None
-                    else "",
-                    ":locked_until": record.locked_until.isoformat()
+                task._last_lease = None  # type: ignore
+            else:
+                ready_at = (
+                    max(record.execute_after, record.locked_until)
                     if record.locked_until is not None
-                    else "",
-                    ":locked_by": record.locked_by,
-                    # Add a suffix to ready_at to guarantee uniqueness of the secondary index
-                    ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
-                    ":version": current_version + 1,
-                },
-                ConditionExpression=(
-                    Attr("version").not_exists() | Attr("version").eq(0)
+                    else record.execute_after
                 )
-                if current_version == 0
-                else Attr("version").eq(current_version),
-            )
-            record.version = current_version + 1
-            task._last_lease = record  # type: ignore
+                await self._table.update_item(
+                    Key={
+                        "partition_id": self._get_partition_id(task),
+                        "task_id": task.canonical_name,
+                    },
+                    UpdateExpression="""
+                    set execute_after=:execute_after,
+                        locked_until=:locked_until,
+                        locked_by=:locked_by,
+                        ready_at=:ready_at,
+                        version=:version
+                    """,
+                    ExpressionAttributeValues={
+                        ":execute_after": record.execute_after.isoformat()
+                        if record.execute_after is not None
+                        else "",
+                        ":locked_until": record.locked_until.isoformat()
+                        if record.locked_until is not None
+                        else "",
+                        ":locked_by": record.locked_by,
+                        # Add a suffix to ready_at to guarantee uniqueness of the secondary index
+                        ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
+                        ":version": current_version + 1,
+                    },
+                    ConditionExpression=(
+                        Attr("version").not_exists() | Attr("version").eq(0)
+                    )
+                    if current_version == 0
+                    else Attr("version").eq(current_version),
+                )
+                record.version = current_version + 1
+                task._last_lease = record  # type: ignore
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            else:
+                raise
+        else:
+            return True
 
     async def poll_task(
         self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
@@ -219,11 +225,11 @@ class DynamoDBRepository(Repository):
         # from cache (or lease) to avoid two roundtrips to DynamoDB in the optimistic case.
         # If we are wrong, we will get a version mismatch, whereby we will load the current
         # state from DB.
-        # TODO: There is an edge case. If the cached value for the task indicates that it is
-        # still locked, but is unlocked early, we might not start executing until the lease
-        # actually expires, since we do not perform any calls to DB at all. In this case we may
-        # want to always fetch to be extra sure.
+        # However, in case the task would be PENDING or LOCKED, this will result in no requests
+        # being made to the DB at all. For pending this is OK, but for locked, we want to revalidate
+        # in order to be able to execute the task as soon as it is unlocked.
         record: Optional[_TaskRecord]
+        potentially_stale = False
         if lease is not None:
             assert isinstance(lease, _TaskRecord)
             record = cast(_TaskRecord, copy.copy(lease))
@@ -231,10 +237,12 @@ class DynamoDBRepository(Repository):
             logger.debug("Using cached values for last lease")
             assert isinstance(last_lease, _TaskRecord)
             record = cast(_TaskRecord, copy.copy(last_lease))
+            potentially_stale = True
         else:
             record = await self._retreive_item(task)
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            must_revalidate = False
             update = False
             if record is None:
                 if task.parent_task is not None:
@@ -257,6 +265,8 @@ class DynamoDBRepository(Repository):
                 and (lease is None or lease.locked_by != record.locked_by)
             ):
                 result = ResultType.LOCKED
+                if potentially_stale:
+                    must_revalidate = True
             elif (
                 record.execute_after <= utc_now
                 and task.execution_mode == ExecutionMode.AT_MOST_ONCE
@@ -279,15 +289,13 @@ class DynamoDBRepository(Repository):
             else:
                 result = ResultType.PENDING
 
-            if update:
-                try:
-                    await self._update_item(task, record)
-                except ClientError as e:
-                    if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                        record = await self._retreive_item(task, consistent_read=True)
-                        continue
-                    else:
-                        raise
+            if must_revalidate or (
+                update and not await self._update_item(task, record)
+            ):
+                logger.debug("Using cached values for last lease")
+                record = await self._retreive_item(task, consistent_read=True)
+                potentially_stale = False
+                continue
 
             return PollResponse(
                 result=result, scheduled_at=scheduled_at, lease=Lease(record)
@@ -316,18 +324,11 @@ class DynamoDBRepository(Repository):
             record.locked_by = None
             record.locked_until = None
 
-            try:
-                await self._update_item(task, record)
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                    record = await self._retreive_item(task, consistent_read=True)
-                    # TODO: Determine if it is safe to assume that if the version does
-                    # not match, we can bail out early and not retry the loop.
-                    continue
-                else:
-                    raise
+            if await self._update_item(task, record):
+                return
 
-            return
+            # If the update fails due to version mismatch
+            record = await self._retreive_item(task, consistent_read=True)
 
         raise PyncetteException(
             "Unable to acquire the lock on the task due to contention"
@@ -351,18 +352,11 @@ class DynamoDBRepository(Repository):
             record.locked_by = None
             record.locked_until = None
 
-            try:
-                await self._update_item(task, record)
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                    record = await self._retreive_item(task, consistent_read=True)
-                    # TODO: Determine if it is safe to assume that if the version does
-                    # not match, we can bail out early and not retry the loop.
-                    continue
-                else:
-                    raise
+            if await self._update_item(task, record):
+                return
 
-            return
+            # If the update fails due to version mismatch
+            record = await self._retreive_item(task, consistent_read=True)
 
         raise PyncetteException(
             "Unable to acquire the lock on the task due to contention"
@@ -385,16 +379,11 @@ class DynamoDBRepository(Repository):
 
             record.locked_until = utc_now + task.lease_duration
 
-            try:
-                await self._update_item(task, record)
-            except ClientError as e:
-                if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                    record = await self._retreive_item(task, consistent_read=True)
-                    continue
-                else:
-                    raise
+            if await self._update_item(task, record):
+                return Lease(record)
 
-            return Lease(record)
+            # If the update fails due to version mismatch
+            record = await self._retreive_item(task, consistent_read=True)
 
         raise PyncetteException(
             "Unable to acquire the lock on the task due to contention"
@@ -432,13 +421,12 @@ class DynamoDBRepository(Repository):
                                 "Projection": {"ProjectionType": "ALL"},
                             }
                         ],
-                        ProvisionedThroughput={
-                            "ReadCapacityUnits": 3,
-                            "WriteCapacityUnits": 3,
-                        },
+                        BillingMode="PAY_PER_REQUEST",
                     )
                     logger.info("Waiting until table is created...")
                     await self._table.wait_until_exists()
+                else:
+                    raise
 
 
 @contextlib.asynccontextmanager

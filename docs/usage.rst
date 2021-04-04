@@ -268,8 +268,55 @@ Redis can be enabled by passing :meth:`~pyncette.postgres.postgres_repository` a
         postgres_table_name='pyncette_tasks'
     )
 
-The table will be automatically initialized on startup if it does not exists.
+The table will be automatically initialized on startup if it does not exists unless ``postgres_skip_table_create`` is set to ``True``.
 
+Amazon DynamoDB
++++++++++++++++
+
+Amazon DynamoDB backend can be configured with :meth:`~pyncette.dynamodb.dynamodb_repository`. 
+
+.. code-block:: py
+
+    from pyncette import Pyncette, Context
+    from pyncette.dynamodb import dynamodb_repository
+
+    app = Pyncette(
+        repository_factory=postgres_repository, 
+        dynamodb_region_name="eu-west-1",
+        dynamodb_table_name="pyncette",
+    )
+
+DynamoDB repository will use `ambient credentials <https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#guide-credentials>`_, such as environment variables, ``~/.aws/config`` or EC2 metadata service if e.g. running on EC2 or a Kubernetes cluster with kiam/kube2iam.
+
+For convenience, an appropriate DynamoDB table will be automatically created on startup if it does not exist. The created table uses on-demand pricing model. If you would like to customize this behavior, you can manually create the table beforehand and pass ``dynamodb_skip_table_create=True`` in parameters.
+
+Expected table schema should look something like this
+
+.. code-block:: json
+
+    {
+        "AttributeDefinitions": [
+            { "AttributeName": "partition_id", "AttributeType": "S" },
+            { "AttributeName": "ready_at", "AttributeType": "S" },
+            { "AttributeName": "task_id", "AttributeType": "S" }
+        ],
+        "KeySchema": [
+            { "AttributeName": "partition_id", "KeyType": "HASH" },
+            { "AttributeName": "task_id", "KeyType": "RANGE" }
+        ],
+        "LocalSecondaryIndexes": [
+            {
+                "IndexName": "ready_at",
+                "KeySchema": [
+                    { "AttributeName": "partition_id", "KeyType": "HASH" },
+                    { "AttributeName": "ready_at", "KeyType": "RANGE" }
+                ],
+                "Projection": {
+                    "ProjectionType": "ALL"
+                }
+            }
+        ]
+    }
 
 Heartbeating
 ------------

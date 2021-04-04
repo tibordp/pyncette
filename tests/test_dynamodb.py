@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from botocore.exceptions import ClientError
 from conftest import random_table_name
 
 from pyncette import dynamodb
@@ -29,5 +30,7 @@ async def test_dynamodb_skip_table_create():
         dynamodb_region_name="eu-west-1",
         dynamodb_skip_table_create=True,
     ) as repository:
-        table_status = await repository._table.table_status
-        assert table_status == "ACTIVE"
+        with pytest.raises(ClientError) as e:
+            await repository._table.table_status
+
+        assert e.value.response["Error"]["Code"] == "ResourceNotFoundException"

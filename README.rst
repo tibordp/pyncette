@@ -157,14 +157,13 @@ custom storage formats / integrations with existing systems. For best results, t
 Development
 ===========
 
-To run integration tests you will need Redis and PostgreSQL Server running locally.
+To run integration tests you will need Redis, PostgreSQL and Localstack (for DynamoDB) running locally.
 
 To run the all tests run::
 
     tox
 
-Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
-so that integration tests can run seamlessly::
+Alternatively, there is a Docker Compose environment that will set up all the services so that integration tests can run seamlessly::
 
     # If you want the Docker environment to run as current user
     # to avoid writing files as root.
