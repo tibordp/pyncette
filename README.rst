@@ -51,7 +51,7 @@ Overview
 
 .. end-badges
 
-A reliable distributed scheduler with pluggable storage backends
+A reliable distributed scheduler with pluggable storage backends for Async Python.
 
 * Free software: MIT license
 
@@ -64,7 +64,7 @@ Minimal installation (just SQLite persistence):
 
     pip install pyncette
 
-Full installation (Redis and PostgreSQL persistence and Prometheus metrics exporter):
+Full installation (all the backends and Prometheus metrics exporter):
 
 ::
 
@@ -73,6 +73,7 @@ Full installation (Redis and PostgreSQL persistence and Prometheus metrics expor
 You can also install the in-development version with::
 
     pip install https://github.com/tibordp/pyncette/archive/master.zip
+
 
 Documentation
 =============
@@ -118,22 +119,58 @@ Persistent distributed cron using Redis (coordinates execution with parallel ins
 
 See the `examples` directory for more examples of usage.
 
+Use cases
+=========
+
+Pyncette is designed for reliable (at-least-once by default) execution of recurring tasks (think cronjobs) whose
+lifecycles are managed dynamically, but can work effectively as a general-purpose task scheduler and executor.
+
+Example use cases:
+
+- You want to perform a database backup every day at noon
+- You want a report to be generated daily for your 10M users at the time of their choosing
+- You want currency conversion rates to be refreshed every 10 seconds
+- You want to allow your users to schedule particular emails to be sent (just once) at an arbitrary time in the future
+
+Pyncette might not be a good fit if:
+
+- You need tasks to execute at sub one second intervals with low jitter
+
+
+Supported backends
+==================
+
+Pyncette comes with an implementation for the following backends (used for persistence and coordination) out-of-the-box:
+
+- SQLite
+- Redis (``pyncette[redis]``)
+- PostgreSQL (``pyncette[postgres]``)
+- Amazon DynamoDB (``pyncette[dynamodb]``)
+
+Pyncette imposes few requirements on the underlying datastores, so it can be extended to support other databases or
+custom storage formats / integrations with existing systems. For best results, the backend needs to provide:
+
+- Some sort of serialization mechanism, e.g. traditional transactions, atomic stored procedures or compare-and-swap
+- Efficient range queries over a secondary index, which can be eventually consistent
+
 
 Development
 ===========
 
-To run integration tests you will need Redis and PostgreSQL Server running locally.
+To run integration tests you will need Redis, PostgreSQL and Localstack (for DynamoDB) running locally.
 
 To run the all tests run::
 
     tox
 
-Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
-so that integration tests can run seamlessly::
+Alternatively, there is a Docker Compose environment that will set up all the services so that integration tests can run seamlessly::
 
+    # If you want the Docker environment to run as current user
+    # to avoid writing files as root.
+    export UID_GID="$(id -u):$(id -g)"
     docker-compose up -d
     docker-compose run --rm shell
-    tox -e integration
+    tox
 
 To run just the unit tests (excluding integration tests)::
 

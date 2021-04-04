@@ -1,4 +1,6 @@
+import asyncio
 import datetime
+from unittest.mock import MagicMock
 
 import pytest
 from croniter.croniter import CroniterBadCronError
@@ -7,6 +9,7 @@ from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
+from pyncette.errors import LeaseLostException
 from pyncette.utils import with_heartbeat
 
 
@@ -76,7 +79,7 @@ def test_instantiate_non_dynamic_task():
 
     with pytest.raises(ValueError):
         app = Pyncette()
-        app.task()(dummy).instantiate(name="foo")
+        app.task(schedule="* * * * *")(dummy).instantiate(name="foo")
 
 
 def test_heartbeat_invalid_configuration():
@@ -101,3 +104,51 @@ async def test_dynamic_successful_task_interval():
     with pytest.raises(ValueError, match="instance name must be provided"):
         async with app.create() as ctx:
             await ctx.unschedule_task(hello)
+
+
+@pytest.mark.asyncio
+async def test_continues_heartbeating_after_exception(timemachine):
+    context = MagicMock()
+    counter = MagicMock()
+
+    async def _heartbeat():
+        counter.heartbeat()
+        raise Exception("Fail")
+
+    context.heartbeat = _heartbeat
+    context.task.lease_duration = datetime.timedelta(seconds=2)
+
+    @with_heartbeat()
+    async def hello(context: Context) -> None:
+        await asyncio.sleep(10)
+
+    task = asyncio.create_task(hello(context))
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+    await timemachine.unwind()
+
+    assert counter.heartbeat.call_count == 9
+
+
+@pytest.mark.asyncio
+async def test_stops_heartbeating_if_lease_lost(timemachine):
+    context = MagicMock()
+    counter = MagicMock()
+
+    async def _heartbeat():
+        counter.heartbeat()
+        raise LeaseLostException(context.task)
+
+    context.heartbeat = _heartbeat
+    context.task.lease_duration = datetime.timedelta(seconds=2)
+
+    @with_heartbeat()
+    async def hello(context: Context) -> None:
+        await asyncio.sleep(10)
+
+    task = asyncio.create_task(hello(context))
+    await timemachine.step(datetime.timedelta(seconds=10))
+    await task
+    await timemachine.unwind()
+
+    assert counter.heartbeat.call_count == 1

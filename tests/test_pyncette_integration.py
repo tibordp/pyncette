@@ -717,6 +717,29 @@ async def test_dynamic_execute_once(timemachine, backend):
 
 
 @pytest.mark.asyncio
+async def test_dynamic_execute_once_unlock(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+        await context.app_context.unschedule_task(context.task)
+        raise Exception("Oops")
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1))
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_dynamic_register_again(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine))
 
@@ -746,7 +769,7 @@ async def test_dynamic_poll_after_unregister(timemachine, backend):
 
     @app.dynamic_task()
     async def hello(context: Context) -> None:
-        counter.execute()
+        counter.execute()  # pragma: no cover
 
     async with app.create() as ctx:
         task_instance = await ctx.schedule_task(
@@ -1151,3 +1174,30 @@ async def test_automatic_heartbeating_cancel_on_lease_expired(timemachine, backe
 
     assert counter.started.call_count == 4
     assert counter.finished.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_heartbeating_after_task_deleted(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+        await context.app_context.unschedule_task(context.task)
+        try:
+            await context.heartbeat()
+        except:  # noqa: E722
+            counter.failure()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1))
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 1
+    assert counter.failure.call_count == 1

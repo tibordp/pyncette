@@ -2,8 +2,7 @@
 
 This example stores the state of the scheduler in Redis.
 
-It is safe to run multiple instances of the app on the same machine, as the DB will be 
-used for coordination.
+It is safe to run multiple instances of the app, as the DB will be used for coordination.
 
 """
 
@@ -15,6 +14,7 @@ import uuid
 
 from pyncette import Context
 from pyncette import FailureMode
+from pyncette import Pyncette
 from pyncette.redis import redis_repository
 
 logger = logging.getLogger(__name__)
@@ -28,6 +28,8 @@ app = Pyncette(
     redis_namespace="example123",
     # Timeout in seconds for Redis operations
     redis_timeout=10,
+    # Batch size for querying dynamic tasks
+    batch_size=10,
 )
 
 

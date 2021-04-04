@@ -2,7 +2,8 @@
 
 This example stores the state of the scheduler in a local SQLite database.
 
-It is safe to run multiple instances of the app on the same machine, as the DB will be used for coordination.
+It is safe to run multiple instances of the app (on the same machine, since this is SQLite), 
+as the DB will be used for coordination.
 
 """
 

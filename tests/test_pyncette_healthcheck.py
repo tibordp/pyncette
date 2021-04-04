@@ -113,3 +113,27 @@ async def test_healthcheck_server_exception(timemachine):
         ctx.shutdown()
         await task
         await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_healthcheck_server_invalid_verb(timemachine):
+    app = Pyncette(repository_factory=wrap_factory(sqlite_repository, timemachine))
+
+    async def healthcheck_handler(app_context):
+        pass  # pragma: no cover
+
+    # Bind on random port to avoid conflict
+    use_healthcheck_server(
+        app, port=0, bind_address="127.0.0.1", healthcheck_handler=healthcheck_handler
+    )
+
+    async with app.create() as ctx, aiohttp.ClientSession() as session:
+        task = asyncio.create_task(ctx.run())
+        async with session.post(
+            f"http://127.0.0.1:{get_healthcheck_port(ctx)}/health",
+            json={"test": "object"},
+        ) as resp:
+            assert resp.status == 405
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
