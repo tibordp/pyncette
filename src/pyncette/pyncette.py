@@ -371,7 +371,7 @@ class Pyncette:
         def handler(signum: Any, frame: Any) -> None:
             if not context._shutting_down.is_set():
                 context.shutdown()
-            else:
+            else:  # pragma: no cover
                 logger.critical("Terminating...")
                 logging.shutdown()
                 os._exit(1)

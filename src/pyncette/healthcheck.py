@@ -46,6 +46,8 @@ def use_healthcheck_server(
                 return web.Response(status=405, text="Method not allowed")
             try:
                 is_healthy = await healthcheck_handler(app_context)
+            except asyncio.CancelledError:
+                raise
             except Exception as e:
                 logger.warning("Exception raised in healthcheck handler", exc_info=e)
                 is_healthy = False

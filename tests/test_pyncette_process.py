@@ -17,6 +17,18 @@ def test_signal_handling():
     assert ret_code == 0
 
 
+def test_signal_handling_uvloop():
+    with subprocess.Popen(
+        ["coverage", "run", "-m", "tests.test_pyncette_process"],
+        env={**os.environ, "LOG_LEVEL": "DEBUG", "USE_UVLOOP": "1"},
+    ) as proc:
+        time.sleep(2)
+        proc.send_signal(signal.SIGINT)
+        ret_code = proc.wait()
+
+    assert ret_code == 0
+
+
 def test_signal_handling_force():
     with subprocess.Popen(
         ["coverage", "run", "-m", "tests.test_pyncette_process"],
@@ -41,6 +53,6 @@ if __name__ == "__main__":
 
     @app.task(interval=datetime.timedelta(seconds=1))
     async def foo(context: Context):
-        await asyncio.sleep(5)
+        await asyncio.sleep(4)
 
     app.main()
