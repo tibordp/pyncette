@@ -152,27 +152,3 @@ async def test_stops_heartbeating_if_lease_lost(timemachine):
     await timemachine.unwind()
 
     assert counter.heartbeat.call_count == 1
-
-
-@pytest.mark.asyncio
-async def test_stops_heartbeating_if_lease_lost(timemachine):
-    context = MagicMock()
-    counter = MagicMock()
-
-    async def _heartbeat():
-        counter.heartbeat()
-        raise LeaseLostException(context.task)
-
-    context.heartbeat = _heartbeat
-    context.task.lease_duration = datetime.timedelta(seconds=2)
-
-    @with_heartbeat()
-    async def hello(context: Context) -> None:
-        await asyncio.sleep(10)
-
-    task = asyncio.create_task(hello(context))
-    await timemachine.step(datetime.timedelta(seconds=10))
-    await task
-    await timemachine.unwind()
-
-    assert counter.heartbeat.call_count == 1
