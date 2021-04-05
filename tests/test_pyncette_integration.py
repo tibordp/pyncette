@@ -1201,3 +1201,128 @@ async def test_heartbeating_after_task_deleted(timemachine, backend):
 
     assert counter.execute.call_count == 1
     assert counter.failure.call_count == 1
+
+
+PARTITION_TASK_NAMES = [
+    "festive_raman",
+    "sad_germain",
+    "determined_nash",
+    "compassionate_chandrasekhar",
+    "suspicious_matsumoto",
+]
+
+
+@pytest.mark.asyncio
+async def test_partitioned_successful_task_interval(timemachine, backend):
+    timemachine.spin_iterations = 20
+
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.partitioned_task(partition_count=5)
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await asyncio.gather(
+            *[
+                ctx.schedule_task(hello, name, interval=datetime.timedelta(seconds=2))
+                for name in PARTITION_TASK_NAMES
+            ]
+        )
+        await timemachine.step(datetime.timedelta(seconds=10))
+        await asyncio.gather(
+            *[ctx.unschedule_task(hello, name) for name in PARTITION_TASK_NAMES]
+        )
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 25
+
+
+@pytest.mark.asyncio
+async def test_partitioned_successful_task_interval_selective(timemachine, backend):
+    timemachine.spin_iterations = 20
+
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.partitioned_task(partition_count=5, enabled_partitions=[0, 1])
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await asyncio.gather(
+            *[
+                ctx.schedule_task(hello, name, interval=datetime.timedelta(seconds=2))
+                for name in PARTITION_TASK_NAMES
+            ]
+        )
+        await timemachine.step(datetime.timedelta(seconds=10))
+        await asyncio.gather(
+            *[ctx.unschedule_task(hello, name) for name in PARTITION_TASK_NAMES]
+        )
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 10
+
+
+@pytest.mark.asyncio
+async def test_disabled_task_interval(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2), enabled=True)
+    async def successful_task_1(context: Context) -> None:
+        counter.execute()
+
+    @app.task(interval=datetime.timedelta(seconds=2), enabled=False)
+    async def successful_task_2(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_disabled_dynamic_successful_task_interval(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task(enabled=True)
+    async def hello_1(context: Context) -> None:
+        counter.execute()
+
+    @app.dynamic_task(enabled=False)
+    async def hello_2(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(hello_1, "1", interval=datetime.timedelta(seconds=2))
+        await ctx.schedule_task(hello_2, "1", interval=datetime.timedelta(seconds=2))
+        await timemachine.step(datetime.timedelta(seconds=10))
+        await ctx.unschedule_task(hello_1, "1")
+        await ctx.unschedule_task(hello_2, "1")
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 5

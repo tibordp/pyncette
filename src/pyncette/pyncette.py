@@ -41,6 +41,7 @@ from .model import TaskFunc
 from .repository import Repository
 from .repository import RepositoryFactory
 from .sqlite import sqlite_repository
+from .task import PartitionedTask
 from .task import Task
 
 logger = logging.getLogger(__name__)
@@ -285,7 +286,7 @@ class Pyncette:
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
-    def task(self, **kwargs: Any) -> Decorator[TaskFunc]:
+    def task(self, enabled: bool = True, **kwargs: Any) -> Decorator[TaskFunc]:
         """Decorator for marking the coroutine as a task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
@@ -298,12 +299,14 @@ class Pyncette:
             }
             self._check_task_name(task_kwargs["name"])
             task = Task(func=func, dynamic=False, **task_kwargs)
-            self._tasks.append(task)
+            if enabled:
+                self._tasks.append(task)
+
             return task
 
         return _func
 
-    def dynamic_task(self, **kwargs: Any) -> Decorator[TaskFunc]:
+    def dynamic_task(self, enabled: bool = True, **kwargs: Any) -> Decorator[TaskFunc]:
         """Decorator for marking the coroutine as a dynamic task"""
 
         def _func(func: TaskFunc) -> TaskFunc:
@@ -317,7 +320,27 @@ class Pyncette:
 
             self._check_task_name(task_kwargs["name"])
             task = Task(func=func, dynamic=True, **task_kwargs)
-            self._tasks.append(task)
+            if enabled:
+                self._tasks.append(task)
+            return task
+
+        return _func
+
+    def partitioned_task(self, **kwargs: Any) -> Decorator[TaskFunc]:
+        """Decorator for marking the coroutine as a partitioned dynamic task"""
+
+        def _func(func: TaskFunc) -> TaskFunc:
+            if isinstance(func, Task):
+                func = func.task_func
+
+            task_kwargs = {
+                **kwargs,
+                "name": kwargs.get("name", None) or getattr(func, "__name__", None),
+            }
+
+            self._check_task_name(task_kwargs["name"])
+            task = PartitionedTask(func=func, **task_kwargs)
+            self._tasks.extend(task.get_partitions())
             return task
 
         return _func
