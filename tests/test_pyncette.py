@@ -155,6 +155,19 @@ async def test_stops_heartbeating_if_lease_lost(timemachine):
     assert counter.heartbeat.call_count == 1
 
 
+@pytest.mark.asyncio
+async def test_partition_count_invalid():
+    app = Pyncette()
+
+    with pytest.raises(
+        ValueError, match="Partition count must be greater than or equal to 1"
+    ):
+
+        @app.partitioned_task(partition_count=0)
+        async def hello(context: Context) -> None:
+            pass  # pragma: no cover
+
+
 def test_default_partition_selector_does_not_change():
     # BE CAREFUL IF THIS TEST BREAKS.
     # This is a regression test that ensures that the default

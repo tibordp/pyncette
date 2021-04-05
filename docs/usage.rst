@@ -119,6 +119,21 @@ Pyncette is timezone-aware, the timezone for a task can be specified by ``timezo
 
 The accepted values are all that :meth:`dateutil.tz.gettz` accepts. 
 
+.. _disable-task:
+
+Disabling a task
+++++++++++++++++
+
+Tasks can be disabled by passing an ``enabled=False`` in the parameters. This can be used for example
+to conditionally enable tasks only on certain instances.
+
+.. code-block:: python
+
+    @app.task(schedule="* * * * *", enabled=False) 
+    async def task1(context: Context):
+        print(f"This will never run.")
+
+
 Task parameters
 ++++++++++++++++
 

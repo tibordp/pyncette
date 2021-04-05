@@ -328,7 +328,9 @@ class Pyncette:
 
         return _func
 
-    def partitioned_task(self, **kwargs: Any) -> Callable[[TaskFunc], PartitionedTask]:
+    def partitioned_task(
+        self, enabled: bool = True, **kwargs: Any
+    ) -> Callable[[TaskFunc], PartitionedTask]:
         """Decorator for marking the coroutine as a partitioned dynamic task"""
 
         def _func(func: TaskFunc) -> PartitionedTask:
@@ -342,7 +344,8 @@ class Pyncette:
 
             self._check_task_name(task_kwargs["name"])
             task = PartitionedTask(func=func, **task_kwargs)
-            self._tasks.extend(task.get_partitions())
+            if enabled:
+                self._tasks.extend(task.get_partitions())
             return task
 
         return _func
