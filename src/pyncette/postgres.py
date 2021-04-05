@@ -307,7 +307,7 @@ class PostgresRepository(Repository):
 
 @contextlib.asynccontextmanager
 async def postgres_repository(**kwargs: Any) -> AsyncIterator[PostgresRepository]:
-    """Factory context manager for Redis repository that initializes the connection to Postgres"""
+    """Factory context manager for repository that initializes the connection to Postgres"""
     postgres_pool = await asyncpg.create_pool(kwargs["postgres_url"])
     try:
         repository = PostgresRepository(postgres_pool, **kwargs)

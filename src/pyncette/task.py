@@ -217,4 +217,4 @@ class Task:
         return self.task_func(context)
 
     def __str__(self) -> str:
-        return self.name
+        return self.canonical_name

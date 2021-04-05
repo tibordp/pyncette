@@ -149,7 +149,7 @@ class MySQLRepository(Repository):
             execute_at = _to_timestamp(task.get_next_execution(utc_now, None))
             task_spec = json.dumps(task.as_spec())
 
-            result = await cursor.execute(
+            await cursor.execute(
                 f"""
                 INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
                 VALUES (%s, %s, %s, %s)
@@ -168,7 +168,6 @@ class MySQLRepository(Repository):
                     execute_at,
                 ),
             )
-            logger.debug(f"register_task returned {result}")
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction() as cursor:
@@ -295,7 +294,6 @@ class MySQLRepository(Repository):
                     lease,
                 ),
             )
-            logger.info(f"RC: {lease}, {cursor.rowcount}, {locked_until}")
             if cursor.rowcount == 1:
                 return lease
             else:
@@ -364,7 +362,6 @@ class MySQLRepository(Repository):
                     _to_timestamp(execute_after),
                 ),
             )
-        logger.debug(f"update_record returned {result}")
 
 
 @contextlib.asynccontextmanager
