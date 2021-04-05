@@ -10,6 +10,7 @@ from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
 from pyncette.errors import LeaseLostException
+from pyncette.task import _default_partition_selector
 from pyncette.utils import with_heartbeat
 
 
@@ -152,3 +153,14 @@ async def test_stops_heartbeating_if_lease_lost(timemachine):
     await timemachine.unwind()
 
     assert counter.heartbeat.call_count == 1
+
+
+def test_default_partition_selector_does_not_change():
+    # BE CAREFUL IF THIS TEST BREAKS.
+    # This is a regression test that ensures that the default
+    # partition key is not changed, as that could lead to all users'
+    # partitions being remapped.
+    assert (
+        _default_partition_selector(1000000000000, "Lorem ipsum dolor sit amet")
+        == 222413034928
+    )

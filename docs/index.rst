@@ -9,6 +9,7 @@ Contents
    installation
    usage
    backends
+   advanced_usage
    reference/pyncette
    contributing
    authors

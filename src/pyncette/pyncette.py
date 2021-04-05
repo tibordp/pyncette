@@ -286,10 +286,10 @@ class Pyncette:
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
-    def task(self, enabled: bool = True, **kwargs: Any) -> Decorator[TaskFunc]:
+    def task(self, enabled: bool = True, **kwargs: Any) -> Callable[[TaskFunc], Task]:
         """Decorator for marking the coroutine as a task"""
 
-        def _func(func: TaskFunc) -> TaskFunc:
+        def _func(func: TaskFunc) -> Task:
             if isinstance(func, Task):
                 func = func.task_func
 
@@ -306,10 +306,12 @@ class Pyncette:
 
         return _func
 
-    def dynamic_task(self, enabled: bool = True, **kwargs: Any) -> Decorator[TaskFunc]:
+    def dynamic_task(
+        self, enabled: bool = True, **kwargs: Any
+    ) -> Callable[[TaskFunc], Task]:
         """Decorator for marking the coroutine as a dynamic task"""
 
-        def _func(func: TaskFunc) -> TaskFunc:
+        def _func(func: TaskFunc) -> Task:
             if isinstance(func, Task):
                 func = func.task_func
 
@@ -326,10 +328,10 @@ class Pyncette:
 
         return _func
 
-    def partitioned_task(self, **kwargs: Any) -> Decorator[TaskFunc]:
+    def partitioned_task(self, **kwargs: Any) -> Callable[[TaskFunc], PartitionedTask]:
         """Decorator for marking the coroutine as a partitioned dynamic task"""
 
-        def _func(func: TaskFunc) -> TaskFunc:
+        def _func(func: TaskFunc) -> PartitionedTask:
             if isinstance(func, Task):
                 func = func.task_func
 

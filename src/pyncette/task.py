@@ -4,7 +4,6 @@ import datetime
 import hashlib
 import json
 import logging
-import math
 from typing import Any
 from typing import Awaitable
 from typing import Dict
@@ -18,7 +17,7 @@ from croniter import croniter
 from .model import Context
 from .model import ExecutionMode
 from .model import FailureMode
-from .model import PartitionKey
+from .model import PartitionSelector
 from .model import TaskFunc
 
 logger = logging.getLogger(__name__)
@@ -225,13 +224,13 @@ class Task:
         return self.canonical_name
 
 
-def _default_partition_key(partition_count: int, task_id: str) -> int:
-    sha = hashlib.sha1()
-    sha.update(task_id.encode("utf-8"))
-    max_sha = int.from_bytes(b"\xff" * sha.digest_size, "big")
-    digest = int.from_bytes(sha.digest(), "big")
+def _default_partition_selector(partition_count: int, task_id: str) -> int:
+    algo = hashlib.sha1()
+    algo.update(task_id.encode("utf-8"))
+    max_value = int.from_bytes(b"\xff" * algo.digest_size, "big") + 1
+    digest = int.from_bytes(algo.digest(), "big")
 
-    return math.floor((digest * partition_count) / max_sha)
+    return (digest * partition_count) // max_value
 
 
 class _TaskPartition(Task):
@@ -252,19 +251,23 @@ class _TaskPartition(Task):
 class PartitionedTask(Task):
     _kwargs: Any
     partition_count: int
-    partition_key: PartitionKey
+    partition_selector: PartitionSelector
     enabled_partitions: Optional[List[int]]
 
     def __init__(
         self,
         partition_count: int,
-        partition_key: PartitionKey = _default_partition_key,
+        partition_selector: PartitionSelector = _default_partition_selector,
         enabled_partitions: Optional[List[int]] = None,
         **kwargs: Any,
     ):
+        if partition_count < 1:
+            raise ValueError("Partition count must be greater than or equal to 1")
+
         super().__init__(dynamic=True, **kwargs)
+
         self.partition_count = partition_count
-        self.partition_key = partition_key
+        self.partition_selector = partition_selector
         self.enabled_partitions = enabled_partitions
         self._kwargs = kwargs
 
@@ -279,7 +282,7 @@ class PartitionedTask(Task):
     def instantiate(self, name: str, **kwargs: Any) -> Task:
         """Creates a concrete instance of a dynamic task"""
 
-        partition_id = self.partition_key(self.partition_count, name)
+        partition_id = self.partition_selector(self.partition_count, name)
         shard = _TaskPartition(partition_id=partition_id, **self._kwargs)
 
         return shard.instantiate(name, **kwargs)

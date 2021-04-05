@@ -272,7 +272,7 @@ Pyncette supports a use case where the tasks are not necessarily known in advanc
 
 When persistence is used, the schedules and task parameters of the are persisted alongside the execution data, which allows the tasks to be registered and unregistered at will. 
 
-An example use case is a web application where every user can have something happen at their chosen schedule. Polling is relatively efficient, since the concrete instances of the dynamic class are only loaded from the storage if the are already due, instead of being polled all the time. 
+An example use case is a web application where every user can have something happen at their chosen schedule. Polling is efficient, since the concrete instances of the dynamic class are only loaded from the storage if the are already due, instead of being polled all the time. 
 
 The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule_task`
 
@@ -322,3 +322,5 @@ Performance
 -----------
 
 Tasks are executed in parallel. If you have a lot of long running tasks, you can set ``concurrency_limit`` in :class:`~pyncette.Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting ``concurrency_limit`` to 1 is equivalent of serializing the execution of all the tasks.
+
+Depending on the backend used, having a dynamic task with a very large number of instances can lead to diminished performance. See :ref:`partitioned-tasks` for a way to address this issue.
