@@ -12,6 +12,7 @@ RUN apt-get update -y \
         python3-pip \
         redis-tools \
         postgresql-client \
+        mysql-client \
         git \
         curl \ 
         unzip \
