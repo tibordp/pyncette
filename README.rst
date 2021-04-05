@@ -123,7 +123,7 @@ Use cases
 =========
 
 Pyncette is designed for reliable (at-least-once by default) execution of recurring tasks (think cronjobs) whose
-lifecycles are managed dynamically, but can work effectively as a general-purpose task scheduler and executor.
+lifecycles are managed dynamically, but can work effectively for 
 
 Example use cases:
 
@@ -134,7 +134,7 @@ Example use cases:
 
 Pyncette might not be a good fit if:
 
-- You need tasks to execute at sub one second intervals with low jitter
+- You need tasks to execute at sub-second intervals with low jitter
 
 
 Supported backends
@@ -142,10 +142,11 @@ Supported backends
 
 Pyncette comes with an implementation for the following backends (used for persistence and coordination) out-of-the-box:
 
-- SQLite
-- Redis (``pyncette[redis]``)
-- PostgreSQL (``pyncette[postgres]``)
-- Amazon DynamoDB (``pyncette[dynamodb]``)
+- SQLite (included)
+- Redis (``pip install pyncette[redis]``)
+- PostgreSQL (``pip install pyncette[postgres]``)
+- MySQL 8.0+ (``pip install pyncette[mysql]``)
+- Amazon DynamoDB (``pip install pyncette[dynamodb]``)
 
 Pyncette imposes few requirements on the underlying datastores, so it can be extended to support other databases or
 custom storage formats / integrations with existing systems. For best results, the backend needs to provide:
@@ -157,13 +158,13 @@ custom storage formats / integrations with existing systems. For best results, t
 Development
 ===========
 
-To run integration tests you will need Redis, PostgreSQL and Localstack (for DynamoDB) running locally.
+To run integration tests you will need Redis, PostgreSQL, MySQL and Localstack (for DynamoDB) running locally.
 
 To run the all tests run::
 
     tox
 
-Alternatively, there is a Docker Compose environment that will set up all the services so that integration tests can run seamlessly::
+Alternatively, there is a Docker Compose environment that will set up all the backends so that integration tests can run seamlessly::
 
     # If you want the Docker environment to run as current user
     # to avoid writing files as root.

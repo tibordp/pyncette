@@ -1,7 +1,7 @@
-pyncette.mysql module
+pyncette.model module
 =====================
 
-.. automodule:: pyncette.mysql
+.. automodule:: pyncette.model
    :members:
    :undoc-members:
    :show-inheritance:

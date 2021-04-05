@@ -8,6 +8,7 @@ Contents
    readme
    installation
    usage
+   backends
    reference/pyncette
    contributing
    authors

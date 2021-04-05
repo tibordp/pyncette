@@ -9,6 +9,7 @@ Submodules
    pyncette.dynamodb
    pyncette.errors
    pyncette.model
+   pyncette.mysql
    pyncette.postgres
    pyncette.prometheus
    pyncette.pyncette
