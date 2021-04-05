@@ -77,6 +77,7 @@ jobs:
       mysql:
         image: mysql
         env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "1"
           MYSQL_DATABASE: pyncette
           MYSQL_USER: pyncette
           MYSQL_PASSWORD: password
