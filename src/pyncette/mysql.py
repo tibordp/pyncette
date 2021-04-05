@@ -338,12 +338,12 @@ class MySQLRepository(Repository):
         execute_after: Optional[datetime.datetime],
     ) -> None:
         if execute_after is None:
-            result = await cursor.execute(
+            await cursor.execute(
                 f"DELETE FROM {self._table_name} WHERE name = %s",
                 (task.canonical_name,),
             )
         else:
-            result = await cursor.execute(
+            await cursor.execute(
                 f"""
                 INSERT INTO {self._table_name} (name, locked_until, locked_by, execute_after)
                 VALUES (%s, %s, %s, %s)
