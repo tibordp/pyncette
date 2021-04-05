@@ -21,9 +21,6 @@ class ScheduledTask:
         return self.execute_at.__eq__(other.execute_at)
 
 
-SPIN_ITERATIONS = 10
-
-
 class TimeMachine:
     """Utility class that allows us to mock real time in a way that plays well with asyncio without implementing a custom event loop."""
 
@@ -32,6 +29,7 @@ class TimeMachine:
         self.io_tasks = []
         self.base_time = base_time
         self.offset = datetime.timedelta(seconds=0)
+        self.spin_iterations = 10
 
     def decorate_io(self, obj):
         """
@@ -153,7 +151,7 @@ class TimeMachine:
                 pass
 
     async def _spin(self):
-        for _ in range(SPIN_ITERATIONS):
+        for _ in range(self.spin_iterations):
             # First we wait for any pending I/O futures to complete
             if self.io_tasks:
                 io_tasks = self.io_tasks

@@ -45,6 +45,11 @@ class TaskFunc(Protocol):
         "Executes the task"
 
 
+class PartitionSelector(Protocol):
+    def __call__(self, partition_count: int, task_id: str) -> int:
+        "Gets the partition number for a given task id"
+
+
 class MiddlewareFunc(Protocol):
     def __call__(
         self, context: Context, next: Callable[[], Awaitable[None]]

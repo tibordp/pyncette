@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import datetime
+import hashlib
 import json
 import logging
 from typing import Any
 from typing import Awaitable
 from typing import Dict
 from typing import Iterator
+from typing import List
 from typing import Optional
 
 import dateutil.tz
@@ -15,6 +17,7 @@ from croniter import croniter
 from .model import Context
 from .model import ExecutionMode
 from .model import FailureMode
+from .model import PartitionSelector
 from .model import TaskFunc
 
 logger = logging.getLogger(__name__)
@@ -178,7 +181,8 @@ class Task:
         """A unique identifier for a task instance"""
         if self.parent_task is not None:
             return "{}:{}".format(
-                self.parent_task.name.replace(":", "::"), self.name.replace(":", "::")
+                self.parent_task.canonical_name,
+                self.name.replace(":", "::"),
             )
         else:
             return self.name.replace(":", "::")
@@ -218,3 +222,67 @@ class Task:
 
     def __str__(self) -> str:
         return self.canonical_name
+
+
+def _default_partition_selector(partition_count: int, task_id: str) -> int:
+    algo = hashlib.sha1()
+    algo.update(task_id.encode("utf-8"))
+    max_value = int.from_bytes(b"\xff" * algo.digest_size, "big") + 1
+    digest = int.from_bytes(algo.digest(), "big")
+
+    return (digest * partition_count) // max_value
+
+
+class _TaskPartition(Task):
+    partition_id: int
+
+    def __init__(self, partition_id: int, **kwargs: Any):
+        super().__init__(dynamic=True, **kwargs)
+        self.partition_id = partition_id
+
+    @property
+    def canonical_name(self) -> str:
+        """A unique identifier for a task instance"""
+
+        assert self.parent_task is None
+        return "{}:{}".format(self.name.replace(":", "::"), self.partition_id)
+
+
+class PartitionedTask(Task):
+    _kwargs: Any
+    partition_count: int
+    partition_selector: PartitionSelector
+    enabled_partitions: Optional[List[int]]
+
+    def __init__(
+        self,
+        partition_count: int,
+        partition_selector: PartitionSelector = _default_partition_selector,
+        enabled_partitions: Optional[List[int]] = None,
+        **kwargs: Any,
+    ):
+        if partition_count < 1:
+            raise ValueError("Partition count must be greater than or equal to 1")
+
+        super().__init__(dynamic=True, **kwargs)
+
+        self.partition_count = partition_count
+        self.partition_selector = partition_selector
+        self.enabled_partitions = enabled_partitions
+        self._kwargs = kwargs
+
+    def get_partitions(self) -> List[Task]:
+        partition_range = self.enabled_partitions or range(self.partition_count)
+
+        return [
+            _TaskPartition(partition_id=partition_id, **self._kwargs)
+            for partition_id in partition_range
+        ]
+
+    def instantiate(self, name: str, **kwargs: Any) -> Task:
+        """Creates a concrete instance of a dynamic task"""
+
+        partition_id = self.partition_selector(self.partition_count, name)
+        shard = _TaskPartition(partition_id=partition_id, **self._kwargs)
+
+        return shard.instantiate(name, **kwargs)

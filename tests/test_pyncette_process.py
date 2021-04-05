@@ -4,7 +4,10 @@ import signal
 import subprocess
 import time
 
+import pytest
 
+
+@pytest.mark.integration
 def test_signal_handling():
     with subprocess.Popen(
         ["coverage", "run", "-m", "tests.test_pyncette_process"],
@@ -17,6 +20,7 @@ def test_signal_handling():
     assert ret_code == 0
 
 
+@pytest.mark.integration
 def test_signal_handling_uvloop():
     with subprocess.Popen(
         ["coverage", "run", "-m", "tests.test_pyncette_process"],
@@ -29,6 +33,7 @@ def test_signal_handling_uvloop():
     assert ret_code == 0
 
 
+@pytest.mark.integration
 def test_signal_handling_force():
     with subprocess.Popen(
         ["coverage", "run", "-m", "tests.test_pyncette_process"],
