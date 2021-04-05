@@ -320,12 +320,8 @@ class MySQLRepository(Repository):
             )
 
     @asynccontextmanager
-    async def _transaction(
-        self, explicit_begin: bool = False
-    ) -> AsyncIterator[aiomysql.Cursor]:
+    async def _transaction(self) -> AsyncIterator[aiomysql.Cursor]:
         async with self._pool.acquire() as connection:
-            if explicit_begin:
-                await connection.begin()
             try:
                 async with connection.cursor(aiomysql.DictCursor) as cursor:
                     yield cursor
