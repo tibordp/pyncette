@@ -2,6 +2,14 @@
 Changelog
 =========
 
+0.8.0 (2021-04-05)
+------------------
+
+* Added Amazon DynamoDB backend
+* Added MySQL backend
+* Added support for partitioned dynamic tasks
+
+
 0.7.0 (2021-03-31)
 ------------------
 
