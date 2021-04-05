@@ -11,6 +11,7 @@ from utils.timemachine import TimeMachine
 
 import pyncette
 from pyncette.dynamodb import dynamodb_repository
+from pyncette.mysql import mysql_repository
 from pyncette.postgres import postgres_repository
 from pyncette.redis import redis_repository
 from pyncette.sqlite import sqlite_repository
@@ -100,6 +101,21 @@ class DynamoDBBackend:
         }
 
 
+class MySQLBackend:
+    __name__ = "mysql"
+    is_persistent = True
+
+    def get_args(self, timemachine):
+        return {
+            "repository_factory": wrap_factory(mysql_repository, timemachine),
+            "mysql_host": os.environ.get("MYSQL_HOST", "localhost"),
+            "mysql_database": os.environ.get("MYSQL_DATABASE", "pyncette"),
+            "mysql_user": os.environ.get("MYSQL_USER", "pyncette"),
+            "mysql_password": os.environ.get("MYSQL_PASSWORD", "password"),
+            "mysql_table_name": random_table_name(),
+        }
+
+
 class DefaultBackend:
     __name__ = "default"
     is_persistent = False
@@ -110,6 +126,7 @@ class DefaultBackend:
 
 all_backends = [
     PostgresBackend(),
+    MySQLBackend(),
     RedisBackend(),
     DynamoDBBackend(),
     DefaultBackend(),

@@ -28,6 +28,7 @@ extras = {
     "prometheus": ["prometheus_client>=0.8.0"],
     "postgres": ["asyncpg>=0.20.1"],
     "dynamodb": ["aioboto3>=8.3.0"],
+    "mysql": ["aiomysql>=0.0.21", "cryptography>=3.4.7"],
     "uvloop": ["uvloop>=0.15.2"],
 }
 

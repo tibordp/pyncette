@@ -46,15 +46,13 @@ To set up `pyncette` for local development:
 3. Create a branch for local development::
 
     git checkout -b name-of-your-bugfix-or-feature
-
+   
    Now you can make your changes locally.
 
-4. Running integration tests assumes that there will be Redis, PostgreSQL and Localstack (for DynamoDB) running on localhost. Alternatively, there is a Docker Compose environment that will set up Redis and PostgreSQL
-so that integration tests can run seamlessly::
+4. Running integration tests assumes that there will be Redis, PostgreSQL, MySQL and Localstack (for DynamoDB) running on localhost. Alternatively, there is a Docker Compose environment that will set up all the backends so that integration tests can run seamlessly::
 
     docker-compose up -d
     docker-compose run --rm shell
-    tox -e integration
 
 5. When you're done making changes run all the checks and docs builder with `tox <https://tox.readthedocs.io/en/latest/install.html>`_ one command::
 
@@ -85,11 +83,6 @@ For merging, you should:
 1. Update documentation when there's new API, functionality etc.
 2. Add a note to ``CHANGELOG.rst`` about the changes.
 3. Add yourself to ``AUTHORS.rst``.
-
-.. [1] If you don't have all the necessary python versions available locally you can rely on Github Actions - it will
-       run the tests for each change you add in the pull request.
-
-       It will be slower though ...
 
 Tips
 ----

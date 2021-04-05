@@ -23,6 +23,16 @@ services:
     environment:
       - SERVICES=dynamodb
 
+  mysql:
+    image: mysql
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_ALLOW_EMPTY_PASSWORD: "1"
+      MYSQL_DATABASE: pyncette
+      MYSQL_USER: pyncette
+      MYSQL_PASSWORD: password
+
   shell:
     build:
       context: .
@@ -37,6 +47,7 @@ services:
       LOCALSTACK_HOST: "localstack"
       AWS_ACCESS_KEY_ID: "foobar"
       AWS_SECRET_ACCESS_KEY: "foobar"
+      MYSQL_HOST: "mysql"
     volumes:
       - type: bind
         source: .
