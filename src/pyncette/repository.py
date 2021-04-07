@@ -7,6 +7,7 @@ from typing import Optional
 
 from typing_extensions import Protocol
 
+from .model import ContinuationToken
 from .model import Lease
 from .model import PollResponse
 from .model import QueryResponse
@@ -20,7 +21,10 @@ class Repository(abc.ABC):
 
     @abc.abstractmethod
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
 

@@ -116,7 +116,7 @@ class Task:
         last_execution: Optional[datetime.datetime],
     ) -> Iterator[datetime.datetime]:
         current_time = last_execution if last_execution is not None else utc_now
-        current_time = current_time.astimezone(dateutil.tz.gettz(self.timezone))
+
         while True:
             if self.schedule is not None:
                 cron = croniter(
@@ -143,10 +143,30 @@ class Task:
                 if last_execution is None
                 else None
             )
-        for run in self._get_future_runs(utc_now, last_execution):
-            utc_run = run.astimezone(dateutil.tz.UTC)
-            if not self.fast_forward or utc_run >= utc_now:
-                return utc_run
+
+        current_time = last_execution if last_execution is not None else utc_now
+
+        if self.interval is not None:
+            if not last_execution or not self.fast_forward:
+                return current_time + self.interval
+            else:
+                count = (utc_now - last_execution) // self.interval + 1
+                return last_execution + (self.interval * count)
+
+        if self.schedule is not None:
+            if self.timezone:
+                current_time = current_time.astimezone(dateutil.tz.gettz(self.timezone))
+
+            cron = croniter(
+                self.schedule, start_time=current_time, ret_type=datetime.datetime
+            )
+
+            while True:
+                next_execution = cron.get_next()
+                if not next_execution:
+                    return None
+                if not self.fast_forward or next_execution >= utc_now:
+                    return next_execution.astimezone(dateutil.tz.UTC)
 
         assert False
 

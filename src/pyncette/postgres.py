@@ -12,6 +12,7 @@ from typing import Optional
 import asyncpg
 
 from pyncette.errors import PyncetteException
+from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -21,6 +22,9 @@ from pyncette.repository import Repository
 from pyncette.task import Task
 
 logger = logging.getLogger(__name__)
+
+
+_CONTINUATION_TOKEN = ContinuationToken(object())
 
 
 class PostgresRepository(Repository):
@@ -62,7 +66,10 @@ class PostgresRepository(Repository):
             )
 
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         async with self._transaction() as connection:
             locked_by = uuid.uuid4()
@@ -103,7 +110,9 @@ class PostgresRepository(Repository):
                 # May result in an extra round-trip if there were exactly
                 # batch_size tasks available, but we deem this an acceptable
                 # tradeoff.
-                has_more=len(ready_tasks) == self._batch_size,
+                continuation_token=_CONTINUATION_TOKEN
+                if len(ready_tasks) == self._batch_size
+                else None,
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:

@@ -16,6 +16,7 @@ from prometheus_client import Histogram
 
 from . import pyncette
 from .model import Context
+from .model import ContinuationToken
 from .model import Lease
 from .model import PollResponse
 from .model import QueryResponse
@@ -98,13 +99,18 @@ class MeteredRepository(Repository):
         self._inner = inner_repository
 
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
         async with self._metric_set.measure(
             operation="poll_dynamic_task", **_get_task_labels(task)
         ):
-            return await self._inner.poll_dynamic_task(utc_now, task)
+            return await self._inner.poll_dynamic_task(
+                utc_now, task, continuation_token
+            )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""

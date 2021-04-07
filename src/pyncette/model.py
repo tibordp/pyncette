@@ -20,6 +20,7 @@ from typing_extensions import Protocol
 T = TypeVar("T")
 Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
+ContinuationToken = NewType("ContinuationToken", object)
 
 # https://github.com/python/mypy/issues/708
 
@@ -101,7 +102,7 @@ class QueryResponse:
     """The result of a task query"""
 
     tasks: List[Tuple["pyncette.task.Task", Lease]]
-    has_more: bool
+    continuation_token: Optional[ContinuationToken]
 
 
 if TYPE_CHECKING:

@@ -15,6 +15,7 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import Deque
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -29,6 +30,7 @@ from .errors import LeaseLostException
 from .errors import PyncetteException
 from .executor import DefaultExecutor
 from .model import Context
+from .model import ContinuationToken
 from .model import Decorator
 from .model import ExecutionMode
 from .model import FailureMode
@@ -178,21 +180,24 @@ class PyncetteContext:
     async def _get_active_tasks(
         self, utc_now: datetime.datetime, tasks: Sequence[Task]
     ) -> AsyncIterator[Tuple[Task, Optional[Lease]]]:
-        for task in tasks:
-            if task.dynamic:
-                while not self._shutting_down.is_set():
-                    query_response = await self._repository.poll_dynamic_task(
-                        utc_now, task
-                    )
-                    for task_and_lease in query_response.tasks:
-                        yield task_and_lease
+        queue: Deque[Tuple[Task, Optional[ContinuationToken]]] = collections.deque(
+            (task, None) for task in tasks
+        )
 
-                    if not query_response.has_more:
-                        break
-
-                    logger.debug(f"Dynamic {task} has more due instances, looping.")
-            else:
+        while queue and not self._shutting_down.is_set():
+            task, continuation_token = queue.popleft()
+            if not task.dynamic:
                 yield (task, None)
+
+            query_response = await self._repository.poll_dynamic_task(
+                utc_now, task, continuation_token
+            )
+            for task_and_lease in query_response.tasks:
+                yield task_and_lease
+
+            if query_response.continuation_token is not None:
+                queue.append((task, query_response.continuation_token))
+                logger.debug(f"Dynamic {task} has more due instances, looping.")
 
     @property
     def last_tick(self) -> Optional[datetime.datetime]:
@@ -383,7 +388,9 @@ class Pyncette:
         return func
 
     @contextlib.asynccontextmanager
-    async def create(self) -> AsyncIterator[PyncetteContext]:
+    async def create(
+        self, context_items: Optional[Dict[str, Any]] = None
+    ) -> AsyncIterator[PyncetteContext]:
         """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration

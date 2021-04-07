@@ -122,19 +122,20 @@ See the `examples` directory for more examples of usage.
 Use cases
 =========
 
-Pyncette is designed for reliable (at-least-once by default) execution of recurring tasks (think cronjobs) whose
-lifecycles are managed dynamically, but can work effectively for 
+Pyncette is designed for reliable (at-least-once or at-most-once) execution of recurring tasks (think cronjobs) whose
+lifecycles are managed dynamically, but can work effectively for non-reccuring tasks too.
 
 Example use cases:
 
 - You want to perform a database backup every day at noon
 - You want a report to be generated daily for your 10M users at the time of their choosing
 - You want currency conversion rates to be refreshed every 10 seconds
-- You want to allow your users to schedule particular emails to be sent (just once) at an arbitrary time in the future
+- You want to allow your users to schedule non-recurring emails to be sent at an arbitrary time in the future
 
 Pyncette might not be a good fit if:
 
-- You need tasks to execute at sub-second intervals with low jitter
+- You want your tasks to be scheduled to run (ideally) once as soon as possible. It is doable, but you will be better served by a general purpose reliable queue like RabbitMQ or Amazon SQS.
+- You need tasks to execute at sub-second intervals with low jitter. Pyncette coordinates execution on a per task-instance basis and this corrdination can add overhead and jitter.
 
 
 Supported backends

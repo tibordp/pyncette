@@ -17,6 +17,7 @@ from typing import Tuple
 import aioredis
 
 from pyncette.errors import PyncetteException
+from pyncette.model import ContinuationToken
 from pyncette.model import Lease
 from pyncette.model import PollResponse
 from pyncette.model import QueryResponse
@@ -25,6 +26,9 @@ from pyncette.repository import Repository
 from pyncette.task import Task
 
 logger = logging.getLogger(__name__)
+
+
+_CONTINUATION_TOKEN = ContinuationToken(object())
 
 
 class _LuaScript:
@@ -118,7 +122,10 @@ class RedisRepository(Repository):
         await self._manage_script.register(self._redis_client)
 
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         new_locked_until = utc_now + task.lease_duration
         response = await self._poll_dynamic_script.execute(
@@ -138,7 +145,9 @@ class RedisRepository(Repository):
                 _create_dynamic_task(task, response_data)
                 for response_data in response[1:]
             ],
-            has_more=response[0] == b"HAS_MORE",
+            continuation_token=_CONTINUATION_TOKEN
+            if response[0] == b"HAS_MORE"
+            else None,
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
