@@ -98,8 +98,10 @@ async def run(
 
 
 def _run(log_level: str, *args: Any, **kwargs: Any) -> None:
-    setup(log_level) # On Windows we need to setup logging again as forking is not supported
+    # On Windows we need to setup logging again as forking is not supported
+    setup(log_level)
     asyncio.run(run(*args, **kwargs))
+
 
 def setup(log_level: str) -> None:
     # Make sure that this module logger always logs no matter what
@@ -107,12 +109,14 @@ def setup(log_level: str) -> None:
     coloredlogs.install(level="DEBUG", milliseconds=True)
     logging.getLogger().setLevel(log_level)
     logger.setLevel("INFO")
-    
+
     try:
         import uvloop
+
         uvloop.install()
-    except:
-        pass
+    except ImportError:
+        logger.info("uvloop is not available, ignoring.")
+
 
 async def report(
     hit_counts: List[RawValue],
@@ -171,7 +175,7 @@ if __name__ == "__main__":
 
     options = parser.parse_args()
     setup(options.log_level)
-    
+
     if options.command == "run":
         hit_count = [RawValue("l", 0) for _ in range(options.processes)]
         staleness = [RawValue("f", 0) for _ in range(options.processes)]
@@ -190,7 +194,12 @@ if __name__ == "__main__":
             job = Process(
                 target=_run,
                 name=str(i),
-                args=(options.log_level, hit_count[i], staleness[i], list(enabled_partitions)),
+                args=(
+                    options.log_level,
+                    hit_count[i],
+                    staleness[i],
+                    list(enabled_partitions),
+                ),
             )
             job.start()
 
