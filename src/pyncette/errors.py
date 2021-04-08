@@ -14,7 +14,7 @@ class LeaseLostException(PyncetteException):
 
     def __init__(self, task: Task):
         super(LeaseLostException, self).__init__(
-            f"Lease on the task {task.name} was lost."
+            f"Lease on the task {task.canonical_name} was lost."
         )
         self.task = task
 

@@ -46,30 +46,30 @@ use_prometheus(app)
 
 
 @app.task(schedule="* * * * * */2")
-async def hello_world(context: Context):
+async def hello_world(context: Context) -> None:
     logger.info("Hello, world!")
 
 
 @app.task(schedule="* * * * * */2")
-async def sleepy_time(context: Context):
+async def sleepy_time(context: Context) -> None:
     logger.info("Hello, bed!")
     await asyncio.sleep(random.random() * 5)
 
 
 @app.task(schedule="* * * * * */2", failure_mode=FailureMode.UNLOCK)
-async def oopsie_daisy(context: Context):
+async def oopsie_daisy(context: Context) -> None:
     if random.choice([True, False]):
         raise Exception("Something went wrong :(")
 
 
 @app.dynamic_task()
-async def execute_once(context: Context):
+async def execute_once(context: Context) -> None:
     logger.info(f"Hello, world from {context.task}")
     await context.app_context.unschedule_task(context.task)
 
 
 @app.task(interval=datetime.timedelta(seconds=1))
-async def schedule_execute_once(context: Context):
+async def schedule_execute_once(context: Context) -> None:
     await context.app_context.schedule_task(
         execute_once, str(uuid.uuid4()), interval=datetime.timedelta(seconds=1)
     )

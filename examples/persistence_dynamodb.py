@@ -6,15 +6,9 @@ It is safe to run multiple instances of the app, as the DB will be used for coor
 
 """
 
-import asyncio
-import datetime
 import logging
-import random
-import uuid
 
 from pyncette import Context
-from pyncette import ExecutionMode
-from pyncette import FailureMode
 from pyncette import Pyncette
 from pyncette.dynamodb import dynamodb_repository
 
@@ -39,7 +33,7 @@ app = Pyncette(
 
 
 @app.task(schedule="* * * * * */2")
-async def hello_world(context: Context):
+async def hello_world(context: Context) -> None:
     logger.info("Hello, world!")
 
 

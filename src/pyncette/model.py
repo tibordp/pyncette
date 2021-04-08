@@ -40,6 +40,14 @@ class Context:
     heartbeat: Heartbeater
     args: Dict[str, Any]
 
+    if TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            ...
+
+        def __setattr__(self, name: str, value: Any) -> Any:
+            ...
+
 
 class TaskFunc(Protocol):
     def __call__(self, context: Context) -> Awaitable[None]:

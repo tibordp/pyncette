@@ -7,7 +7,6 @@ import logging
 from typing import Any
 from typing import Awaitable
 from typing import Dict
-from typing import Iterator
 from typing import List
 from typing import Optional
 
@@ -38,11 +37,13 @@ class Task:
     lease_duration: datetime.timedelta
     parent_task: Optional["Task"]
     extra_args: Dict[str, Any]
+    _enabled: bool
 
     def __init__(
         self,
         name: str,
         func: TaskFunc,
+        enabled: bool = True,
         dynamic: bool = False,
         parent_task: "Task" = None,
         schedule: Optional[str] = None,
@@ -55,6 +56,7 @@ class Task:
         lease_duration: datetime.timedelta = datetime.timedelta(seconds=60),
         **kwargs: Any,
     ):
+        self._enabled = enabled
         self.name = name
         self.task_func = func
 
@@ -109,28 +111,6 @@ class Task:
             json.dumps(self.extra_args)
         except Exception as e:
             raise ValueError(f"Extra parameters must be JSON serializable ({e})")
-
-    def _get_future_runs(
-        self,
-        utc_now: datetime.datetime,
-        last_execution: Optional[datetime.datetime],
-    ) -> Iterator[datetime.datetime]:
-        current_time = last_execution if last_execution is not None else utc_now
-
-        while True:
-            if self.schedule is not None:
-                cron = croniter(
-                    self.schedule, start_time=current_time, ret_type=datetime.datetime
-                )
-                current_time = cron.get_next()
-            elif self.interval is not None:
-                current_time = current_time + self.interval
-            else:
-                assert False
-
-            yield current_time.astimezone(dateutil.tz.UTC)
-
-        assert False
 
     def get_next_execution(
         self,
@@ -197,6 +177,14 @@ class Task:
         )
 
     @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        self._enabled = value
+
+    @property
     def canonical_name(self) -> str:
         """A unique identifier for a task instance"""
         if self.parent_task is not None:
@@ -255,10 +243,23 @@ def _default_partition_selector(partition_count: int, task_id: str) -> int:
 
 class _TaskPartition(Task):
     partition_id: int
+    _parent: PartitionedTask
 
-    def __init__(self, partition_id: int, **kwargs: Any):
+    def __init__(self, parent: PartitionedTask, partition_id: int, **kwargs: Any):
         super().__init__(dynamic=True, **kwargs)
+        self._parent = parent
         self.partition_id = partition_id
+
+    @property
+    def enabled(self) -> bool:
+        return self._parent.enabled and (
+            self._parent.enabled_partitions is None
+            or self.partition_id in self._parent.enabled_partitions
+        )
+
+    @enabled.setter
+    def enabled(self, value: bool) -> None:
+        raise ValueError("Use enabled_partitions to disable polling a partition.")
 
     @property
     def canonical_name(self) -> str:
@@ -292,17 +293,15 @@ class PartitionedTask(Task):
         self._kwargs = kwargs
 
     def get_partitions(self) -> List[Task]:
-        partition_range = self.enabled_partitions or range(self.partition_count)
-
         return [
-            _TaskPartition(partition_id=partition_id, **self._kwargs)
-            for partition_id in partition_range
+            _TaskPartition(self, partition_id=partition_id, **self._kwargs)
+            for partition_id in range(self.partition_count)
         ]
 
     def instantiate(self, name: str, **kwargs: Any) -> Task:
         """Creates a concrete instance of a dynamic task"""
 
         partition_id = self.partition_selector(self.partition_count, name)
-        shard = _TaskPartition(partition_id=partition_id, **self._kwargs)
+        shard = _TaskPartition(self, partition_id=partition_id, **self._kwargs)
 
         return shard.instantiate(name, **kwargs)
