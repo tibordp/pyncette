@@ -20,6 +20,7 @@ from typing_extensions import Protocol
 T = TypeVar("T")
 Decorator = Callable[[T], T]
 Lease = NewType("Lease", object)
+ContinuationToken = NewType("ContinuationToken", object)
 
 # https://github.com/python/mypy/issues/708
 
@@ -39,6 +40,14 @@ class Context:
     heartbeat: Heartbeater
     args: Dict[str, Any]
 
+    if TYPE_CHECKING:
+
+        def __getattr__(self, name: str) -> Any:
+            ...
+
+        def __setattr__(self, name: str, value: Any) -> Any:
+            ...
+
 
 class TaskFunc(Protocol):
     def __call__(self, context: Context) -> Awaitable[None]:
@@ -50,10 +59,13 @@ class PartitionSelector(Protocol):
         "Gets the partition number for a given task id"
 
 
+class NextFunc(Protocol):
+    def __call__(self) -> Awaitable[None]:
+        "Enter the next middleware or the task body"
+
+
 class MiddlewareFunc(Protocol):
-    def __call__(
-        self, context: Context, next: Callable[[], Awaitable[None]]
-    ) -> Awaitable[None]:
+    def __call__(self, context: Context, next: NextFunc) -> Awaitable[None]:
         "Executes the middleware"
 
 
@@ -101,7 +113,7 @@ class QueryResponse:
     """The result of a task query"""
 
     tasks: List[Tuple["pyncette.task.Task", Lease]]
-    has_more: bool
+    continuation_token: Optional[ContinuationToken]
 
 
 if TYPE_CHECKING:

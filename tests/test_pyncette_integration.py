@@ -314,7 +314,7 @@ async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
     counter = MagicMock()
 
     @app.task(
-        interval=datetime.timedelta(seconds=2),
+        interval=datetime.timedelta(seconds=3),
         fast_forward=True,
         failure_mode=FailureMode.UNLOCK,
     )
@@ -331,7 +331,58 @@ async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
         await task
         await timemachine.unwind()
 
-    assert counter.execute.call_count == 7
+    assert counter.execute.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_fast_forward_cronspec(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(schedule="* * * * * */3", fast_forward=True)
+    async def once_long_task(context: Context) -> None:
+        counter.execute()
+        if counter.execute.call_count == 1:
+            await asyncio.sleep(10)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=20))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used_cronspec(
+    timemachine, backend
+):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(
+        schedule="* * * * * */3",
+        fast_forward=True,
+        failure_mode=FailureMode.UNLOCK,
+    )
+    async def once_failing_task(context: Context) -> None:
+        counter.execute()
+        if counter.execute.call_count == 1:
+            await asyncio.sleep(10)
+            raise RuntimeError("Oops")
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=20))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.execute.call_count == 4
 
 
 @pytest.mark.asyncio

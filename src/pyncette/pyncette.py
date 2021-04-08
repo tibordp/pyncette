@@ -15,6 +15,7 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import Deque
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -29,6 +30,7 @@ from .errors import LeaseLostException
 from .errors import PyncetteException
 from .executor import DefaultExecutor
 from .model import Context
+from .model import ContinuationToken
 from .model import Decorator
 from .model import ExecutionMode
 from .model import FailureMode
@@ -178,21 +180,24 @@ class PyncetteContext:
     async def _get_active_tasks(
         self, utc_now: datetime.datetime, tasks: Sequence[Task]
     ) -> AsyncIterator[Tuple[Task, Optional[Lease]]]:
-        for task in tasks:
-            if task.dynamic:
-                while not self._shutting_down.is_set():
-                    query_response = await self._repository.poll_dynamic_task(
-                        utc_now, task
-                    )
-                    for task_and_lease in query_response.tasks:
-                        yield task_and_lease
+        queue: Deque[Tuple[Task, Optional[ContinuationToken]]] = collections.deque(
+            (task, None) for task in tasks
+        )
 
-                    if not query_response.has_more:
-                        break
-
-                    logger.debug(f"Dynamic {task} has more due instances, looping.")
-            else:
+        while queue and not self._shutting_down.is_set():
+            task, continuation_token = queue.popleft()
+            if not task.dynamic:
                 yield (task, None)
+
+            query_response = await self._repository.poll_dynamic_task(
+                utc_now, task, continuation_token
+            )
+            for task_and_lease in query_response.tasks:
+                yield task_and_lease
+
+            if query_response.continuation_token is not None:
+                queue.append((task, query_response.continuation_token))
+                logger.debug(f"Dynamic {task} has more due instances, looping.")
 
     @property
     def last_tick(self) -> Optional[datetime.datetime]:
@@ -222,13 +227,23 @@ class PyncetteContext:
 
         self._last_tick = utc_now
 
+    def add_to_context(self, name: str, value: Any) -> None:
+        """Adds a value with a given key to task context"""
+        if name in Context.__annotations__:
+            raise ValueError(f"Cannot use reserved name {name}")
+
+        if hasattr(self._root_context, name):
+            raise ValueError(f"Key {name} already exists")
+
+        setattr(self._root_context, name, value)
+
     async def run(self) -> None:
         """Runs the Pyncette's main event loop."""
         # Tasks are frozen for the duration of the main loop
         if self._root_context is None:
             raise PyncetteException("Context is not yet initialized")
 
-        tasks = collections.deque(self._app._tasks)
+        tasks = collections.deque(task for task in self._app._tasks if task.enabled)
 
         while not self._shutting_down.is_set():
             start_time = time.perf_counter()
@@ -286,11 +301,11 @@ class Pyncette:
         self._repository_factory = repository_factory
         self._configuration = kwargs
 
-    def task(self, enabled: bool = True, **kwargs: Any) -> Callable[[TaskFunc], Task]:
+    def task(self, **kwargs: Any) -> Callable[[TaskFunc], Task]:
         """Decorator for marking the coroutine as a task"""
 
         def _func(func: TaskFunc) -> Task:
-            if isinstance(func, Task):
+            if isinstance(func, (Task, PartitionedTask)):
                 func = func.task_func
 
             task_kwargs = {
@@ -299,20 +314,17 @@ class Pyncette:
             }
             self._check_task_name(task_kwargs["name"])
             task = Task(func=func, dynamic=False, **task_kwargs)
-            if enabled:
-                self._tasks.append(task)
+            self._tasks.append(task)
 
             return task
 
         return _func
 
-    def dynamic_task(
-        self, enabled: bool = True, **kwargs: Any
-    ) -> Callable[[TaskFunc], Task]:
+    def dynamic_task(self, **kwargs: Any) -> Callable[[TaskFunc], Task]:
         """Decorator for marking the coroutine as a dynamic task"""
 
         def _func(func: TaskFunc) -> Task:
-            if isinstance(func, Task):
+            if isinstance(func, (Task, PartitionedTask)):
                 func = func.task_func
 
             task_kwargs = {
@@ -322,19 +334,16 @@ class Pyncette:
 
             self._check_task_name(task_kwargs["name"])
             task = Task(func=func, dynamic=True, **task_kwargs)
-            if enabled:
-                self._tasks.append(task)
+            self._tasks.append(task)
             return task
 
         return _func
 
-    def partitioned_task(
-        self, enabled: bool = True, **kwargs: Any
-    ) -> Callable[[TaskFunc], PartitionedTask]:
+    def partitioned_task(self, **kwargs: Any) -> Callable[[TaskFunc], PartitionedTask]:
         """Decorator for marking the coroutine as a partitioned dynamic task"""
 
         def _func(func: TaskFunc) -> PartitionedTask:
-            if isinstance(func, Task):
+            if isinstance(func, (Task, PartitionedTask)):
                 func = func.task_func
 
             task_kwargs = {
@@ -344,8 +353,8 @@ class Pyncette:
 
             self._check_task_name(task_kwargs["name"])
             task = PartitionedTask(func=func, **task_kwargs)
-            if enabled:
-                self._tasks.extend(task.get_partitions())
+            self._tasks.extend(task.get_partitions())
+
             return task
 
         return _func
@@ -359,6 +368,12 @@ class Pyncette:
                 raise ValueError(f"Duplicate task name {name}")
 
     def use_fixture(self, fixture_name: str, func: FixtureFunc) -> None:
+        if fixture_name in Context.__annotations__:
+            raise ValueError(f"Cannot use reserved name {fixture_name}")
+
+        if fixture_name in (name for name, _ in self._fixtures):
+            raise ValueError(f"Duplicate fixture name {fixture_name}")
+
         self._fixtures.append((fixture_name, contextlib.asynccontextmanager(func)))
 
     def use_middleware(self, func: MiddlewareFunc) -> None:
@@ -369,10 +384,12 @@ class Pyncette:
 
         def _func(func: FixtureFunc) -> FixtureFunc:
             fixture_name = name or getattr(func, "__name__", None)
+
             if fixture_name is not None:
                 self.use_fixture(fixture_name, func)
             else:
                 raise ValueError("Unable to determine name for the fixture")
+
             return func
 
         return _func
@@ -383,7 +400,9 @@ class Pyncette:
         return func
 
     @contextlib.asynccontextmanager
-    async def create(self) -> AsyncIterator[PyncetteContext]:
+    async def create(
+        self, context_items: Optional[Dict[str, Any]] = None
+    ) -> AsyncIterator[PyncetteContext]:
         """Creates the execution context."""
         async with self._repository_factory(
             **self._configuration

@@ -82,7 +82,7 @@ setup(
         "croniter>=0.3.34",
         "aiosqlite>=0.13.0",
         "aiohttp>=3.6.2",
-        "python-dateutil",
+        "python-dateutil>=2.8.1",
         "coloredlogs",
     ],
     extras_require={

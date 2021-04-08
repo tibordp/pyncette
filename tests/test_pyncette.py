@@ -3,12 +3,14 @@ import datetime
 from unittest.mock import MagicMock
 
 import pytest
+from conftest import DefaultBackend
 from croniter.croniter import CroniterBadCronError
 
 from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import FailureMode
 from pyncette import Pyncette
+from pyncette import PyncetteContext
 from pyncette.errors import LeaseLostException
 from pyncette.task import _default_partition_selector
 from pyncette.utils import with_heartbeat
@@ -155,8 +157,68 @@ async def test_stops_heartbeating_if_lease_lost(timemachine):
     assert counter.heartbeat.call_count == 1
 
 
+def test_fixture_name_invalid():
+    app = Pyncette()
+
+    async def dummy(app_context: PyncetteContext):
+        pass  # pragma: no cover
+
+    with pytest.raises(ValueError):
+        app.use_fixture("scheduled_at", dummy)
+
+    app.use_fixture("duplicate", dummy)
+    with pytest.raises(ValueError):
+        app.use_fixture("duplicate", dummy)
+
+
 @pytest.mark.asyncio
-async def test_partition_count_invalid():
+async def test_add_to_context(timemachine):
+    app = Pyncette(**DefaultBackend().get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def successful_task(context: Context) -> None:
+        context.hello()
+
+    async with app.create() as ctx:
+        ctx.add_to_context("hello", counter)
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=10))
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    assert counter.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_add_to_context_invalid_name():
+    app = Pyncette()
+
+    @app.fixture()
+    async def fixture(app_context: PyncetteContext):
+        yield None
+
+    counter = MagicMock()
+
+    @app.task(interval=datetime.timedelta(seconds=2))
+    async def successful_task(context: Context) -> None:
+        context.hello()
+
+    async with app.create() as ctx:
+        ctx.add_to_context("duplicate", counter)
+        with pytest.raises(ValueError):
+            ctx.add_to_context("duplicate", counter)
+
+        with pytest.raises(ValueError):
+            ctx.add_to_context("fixture", counter)
+
+        with pytest.raises(ValueError):
+            ctx.add_to_context("scheduled_at", counter)
+
+
+def test_partition_count_invalid():
     app = Pyncette()
 
     with pytest.raises(

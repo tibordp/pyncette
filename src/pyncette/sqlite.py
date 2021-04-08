@@ -14,6 +14,7 @@ import aiosqlite
 import dateutil.tz
 
 from pyncette.errors import PyncetteException
+from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -37,6 +38,9 @@ def _to_timestamp(date: Optional[datetime.datetime]) -> Optional[float]:
         return None
     else:
         return date.timestamp()
+
+
+_CONTINUATION_TOKEN = ContinuationToken(object())
 
 
 class SqliteRepository(Repository):
@@ -80,7 +84,10 @@ class SqliteRepository(Repository):
             )
 
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         async with self._transaction(explicit_begin=True):
             locked_by = uuid.uuid4()
@@ -122,7 +129,9 @@ class SqliteRepository(Repository):
                     (concrete_task, Lease(locked_by))
                     for concrete_task in concrete_tasks
                 ],
-                has_more=len(concrete_tasks) == self._batch_size,
+                continuation_token=_CONTINUATION_TOKEN
+                if len(concrete_tasks) == self._batch_size
+                else None,
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:

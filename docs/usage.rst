@@ -134,6 +134,23 @@ to conditionally enable tasks only on certain instances.
         print(f"This will never run.")
 
 
+Tasks can be disabled also in the initialization code:
+
+.. code-block:: python
+
+    from pyncette import Pyncette, Context
+
+    app = Pyncette()
+
+    @app.task(schedule="* * * * *") 
+    async def task1(context: Context):
+        print(f"This will never run.")
+
+    async with app.create() as app_context:
+        task1.enabled = False
+        await app_context.run()
+
+
 Task parameters
 ++++++++++++++++
 

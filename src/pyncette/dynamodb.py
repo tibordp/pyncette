@@ -19,6 +19,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from pyncette.errors import PyncetteException
+from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -86,14 +87,23 @@ class DynamoDBRepository(Repository):
             raise ValueError("Batch size must be greater than 0")
 
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
+
         response = await self._table.query(
             IndexName="ready_at",
             Select="ALL_ATTRIBUTES",
             Limit=self._batch_size,
             KeyConditionExpression=Key("partition_id").eq(self._get_partition_id(task))
             & Key("ready_at").lt(f"{utc_now.isoformat()}`"),
+            **(
+                {"ExclusiveStartKey": continuation_token}
+                if continuation_token is not None
+                else {}
+            ),
         )
 
         return QueryResponse(
@@ -104,7 +114,7 @@ class DynamoDBRepository(Repository):
                 )
                 for record in response["Items"]
             ],
-            has_more="LastEvaluatedKey" in response,
+            continuation_token=response.get("LastEvaluatedKey", None),
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:

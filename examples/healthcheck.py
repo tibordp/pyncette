@@ -8,10 +8,8 @@ which returns 200 if last successfull poll was less than 2 poll intervals ago, 5
 """
 
 import asyncio
-import datetime
 import logging
 import random
-import uuid
 
 from pyncette import Context
 from pyncette import Pyncette
@@ -27,7 +25,7 @@ use_healthcheck_server(app, port=8080)
 
 
 @app.task(schedule="* * * * * */2")
-async def hello_world(context: Context):
+async def hello_world(context: Context) -> None:
     if random.choice([True, False]):
         await asyncio.sleep(4)
     logger.info("Hello, world!")

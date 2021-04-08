@@ -15,6 +15,7 @@ import dateutil.tz
 import pymysql
 
 from pyncette.errors import PyncetteException
+from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -38,6 +39,9 @@ def _to_timestamp(date: Optional[datetime.datetime]) -> Optional[float]:
         return None
     else:
         return date.timestamp()
+
+
+_CONTINUATION_TOKEN = ContinuationToken(object())
 
 
 class MySQLRepository(Repository):
@@ -90,7 +94,10 @@ class MySQLRepository(Repository):
                     raise
 
     async def poll_dynamic_task(
-        self, utc_now: datetime.datetime, task: Task
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+        continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         async with self._transaction() as cursor:
             locked_by = str(uuid.uuid4())
@@ -139,7 +146,9 @@ class MySQLRepository(Repository):
                 # May result in an extra round-trip if there were exactly
                 # batch_size tasks available, but we deem this an acceptable
                 # tradeoff.
-                has_more=len(ready_tasks) == self._batch_size,
+                continuation_token=_CONTINUATION_TOKEN
+                if len(ready_tasks) == self._batch_size
+                else None,
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
