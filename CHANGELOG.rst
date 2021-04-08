@@ -2,6 +2,15 @@
 Changelog
 =========
 
+0.8.1 (2021-04-08)
+------------------
+
+* Improve performance for calculation of the next execution time
+* Add ability for repositories to pass a pagination token
+* Add `add_to_context()` to inject static data to context
+* Clean up documentation and add additional examples
+
+
 0.8.0 (2021-04-05)
 ------------------
 
