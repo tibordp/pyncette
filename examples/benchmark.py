@@ -1,11 +1,17 @@
 """
+This example schedules a large number of dynamic tasks and then runs them (in multiple processes)
+as a way to gauge the total throughput of Pyncette for a particular backend.
 
-This example uses Pyncette to implement a reliable delay queue (persistence is needed for durability
-or for running multiple instances of the app at the same time, see examples/persistence-*.py for details)
+To run this example, configure the selected backend in the Pyncette constructor, then run populate the database.
 
-After the task instance suceeds it will not be scheduled again as with recurrent tasks, however,
-if an exception is raised, it will be retried if ExecutionMode.AT_LEAST_ONCE is used.
+    python examples/benchmark.py populate -n <number of tasks to insert>
 
+While the tasks are populating you can run
+
+    python examples/benchmark.py run --processes <# of processes>
+
+The process will continuously print the overall throughput (task executions per second) and the lag
+(seconds since the last successful tick).
 """
 
 import argparse
@@ -27,32 +33,23 @@ import uvloop
 from pyncette import Context
 from pyncette import ExecutionMode
 from pyncette import Pyncette
-from tests.utils.fakerepository import fake_repository
-
-# from pyncette.dynamodb import dynamodb_repository
-# from pyncette.executor import SynchronousExecutor
-# from pyncette.redis import redis_repository
+from pyncette.redis import redis_repository
 
 logger = logging.getLogger(__name__)
 
+# Adjust the values below
 app = Pyncette(
-    # repository_factory=dynamodb_repository,
-    # dynamodb_region_name="eu-west-1",
-    # dynamodb_table_name="pyncette",
-    # repository_factory=redis_repository,
-    # redis_url="redis://localhost",
-    # redis_namespace="example1",
-    repository_factory=fake_repository,
-    # executor_cls=SynchronousExecutor,
-    batch_size=1000,
-    records_per_tick=2000,
+    repository_factory=redis_repository,
+    redis_url="redis://localhost",
+    redis_namespace="benchmark",
+    batch_size=100,
 )
 
 PARTITION_COUNT = 32
 
 
 @app.partitioned_task(
-    partition_count=PARTITION_COUNT, execution_mode=ExecutionMode.AT_MOST_ONCE
+    partition_count=PARTITION_COUNT, execution_mode=ExecutionMode.AT_LEAST_ONCE
 )
 async def benchmark_task(context: Context) -> None:
     context.hit_count.value += 1
@@ -91,11 +88,13 @@ async def run(
     staleness: RawValue,
     enabled_partitions: Optional[List[int]],
 ) -> None:
+
     async with app.create() as app_context:
         app_context.add_to_context("hit_count", hit_count)
         app_context.add_to_context("staleness", staleness)
         benchmark_task.enabled_partitions = enabled_partitions
 
+        logger.info(f"Starting to poll following partitions {enabled_partitions}")
         await app_context.run()
 
 
@@ -118,7 +117,7 @@ async def report(
         now = time.perf_counter()
 
         logger.info(
-            "{:10.4f} RPS, {}".format(
+            "{:10.2f} RPS, Staleness {:.2f}s".format(
                 (hit_count - previous_hit_count) / (now - previous_sample), staleness
             )
         )
@@ -128,16 +127,35 @@ async def report(
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     parser.add_argument("--log-level", default="WARNING")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    populate_option = subparsers.add_parser("populate")
-    populate_option.add_argument("-n", "--number", type=int, default=10000)
-    populate_option.add_argument("-p", "--parallel", type=int, default=20)
-    run_option = subparsers.add_parser("run")
-    run_option.add_argument("--processes", type=int, default=1)
-    run_option.add_argument("--partition-count", type=int, default=PARTITION_COUNT)
+    populate_option = subparsers.add_parser(
+        "populate", help="Populate the backend with a large number of tasks"
+    )
+    populate_option.add_argument(
+        "-n", "--number", type=int, default=10000, help="Number of tasks to insert"
+    )
+    populate_option.add_argument(
+        "-p",
+        "--parallelism",
+        type=int,
+        default=50,
+        help="How many tasks to insert in parallel",
+    )
+    run_option = subparsers.add_parser("run", help="Run the Pyncette app")
+    run_option.add_argument(
+        "--processes", type=int, default=1, help="Number of processes to run"
+    )
+    run_option.add_argument(
+        "--partition-count",
+        type=int,
+        default=PARTITION_COUNT,
+        help="How many partitions each process should poll",
+    )
 
     options = parser.parse_args()
     coloredlogs.install(level="INFO", milliseconds=True, logger=logger)

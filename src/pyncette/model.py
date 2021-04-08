@@ -59,10 +59,13 @@ class PartitionSelector(Protocol):
         "Gets the partition number for a given task id"
 
 
+class NextFunc(Protocol):
+    def __call__(self) -> Awaitable[None]:
+        "Enter the next middleware or the task body"
+
+
 class MiddlewareFunc(Protocol):
-    def __call__(
-        self, context: Context, next: Callable[[], Awaitable[None]]
-    ) -> Awaitable[None]:
+    def __call__(self, context: Context, next: NextFunc) -> Awaitable[None]:
         "Executes the middleware"
 
 

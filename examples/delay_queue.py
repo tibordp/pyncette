@@ -1,7 +1,7 @@
 """
 
 This example uses Pyncette to implement a reliable delay queue (persistence is needed for durability
-or for running multiple instances of the app at the same time, see examples/persistence-*.py for details)
+or for running multiple instances of the app at the same time, see examples/persistence.py for details)
 
 After the task instance suceeds it will not be scheduled again as with recurrent tasks, however,
 if an exception is raised, it will be retried if ExecutionMode.AT_LEAST_ONCE is used.

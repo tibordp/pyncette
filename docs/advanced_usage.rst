@@ -39,7 +39,7 @@ Pyncette supports transparent partitioning of tasks through :meth:`~pyncette.Pyn
         await app_context.run()
 
 
-This splits the dynamic task into 32 partitions and the task instances are automatically assigned to them based on the hash of the task instance name. 
+This splits the dynamic task into 32 partitions and the task instances are automatically assigned to them based on the hash of the task instance name.
 
 The default partition selector uses SHA1 hash of the instance name, but a custom selector can be provided:
 
@@ -66,7 +66,7 @@ making it impossible to unschedule them through :meth:`~pyncette.PyncetteContext
 There is also a tradeoff as the time complexity as a single Pyncette poll grows linearly with the total number of tasks (or their
 partitions). Setting the number of partitions too high can lead to diminished performance due to the polling overhead.
 
-It is possible to configure Pyncette to only poll certain partitions using the ``poll_partitions`` parameter. This will allow the 
+It is possible to configure Pyncette to only poll certain partitions using the ``enabled_partitions`` parameter. This will allow the 
 tasks to be scheduled and unscheduled by any application instance, but only the partitions selected will be polled. You may use
 this if you have a large number of instances for a given task in order to spread the load evenly among them.
 
@@ -75,7 +75,7 @@ this if you have a large number of instances for a given task in order to spread
     @app.partitioned_task(
         partition_count=8, 
         # Partitions 4, 5, 6 and 7 will not be polled
-        poll_partitions=[0, 1, 2, 3]
+        enabled_partitions=[0, 1, 2, 3]
     )
     async def hello(context: Context) -> None:
         print(f"Hello {context.args['username']}")
