@@ -28,7 +28,6 @@ from typing import List
 from typing import Optional
 
 import coloredlogs
-import uvloop
 
 from pyncette import Context
 from pyncette import ExecutionMode
@@ -98,9 +97,22 @@ async def run(
         await app_context.run()
 
 
-def _run(*args: Any, **kwargs: Any) -> None:
+def _run(log_level: str, *args: Any, **kwargs: Any) -> None:
+    setup(log_level) # On Windows we need to setup logging again as forking is not supported
     asyncio.run(run(*args, **kwargs))
 
+def setup(log_level: str) -> None:
+    # Make sure that this module logger always logs no matter what
+    # the selected level is.
+    coloredlogs.install(level="DEBUG", milliseconds=True)
+    logging.getLogger().setLevel(log_level)
+    logger.setLevel("INFO")
+    
+    try:
+        import uvloop
+        uvloop.install()
+    except:
+        pass
 
 async def report(
     hit_counts: List[RawValue],
@@ -158,15 +170,8 @@ if __name__ == "__main__":
     )
 
     options = parser.parse_args()
-
-    # Make sure that this module logger always logs no matter what
-    # the selected level is.
-    coloredlogs.install(level="DEBUG", milliseconds=True)
-    logging.getLogger().setLevel(options.log_level)
-    logger.setLevel("INFO")
-
-    uvloop.install()
-
+    setup(options.log_level)
+    
     if options.command == "run":
         hit_count = [RawValue("l", 0) for _ in range(options.processes)]
         staleness = [RawValue("f", 0) for _ in range(options.processes)]
@@ -185,7 +190,7 @@ if __name__ == "__main__":
             job = Process(
                 target=_run,
                 name=str(i),
-                args=(hit_count[i], staleness[i], list(enabled_partitions)),
+                args=(options.log_level, hit_count[i], staleness[i], list(enabled_partitions)),
             )
             job.start()
 
