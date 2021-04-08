@@ -158,17 +158,28 @@ if __name__ == "__main__":
     )
 
     options = parser.parse_args()
-    coloredlogs.install(level="INFO", milliseconds=True, logger=logger)
-    coloredlogs.install(level=options.log_level, milliseconds=True)
+
+    # Make sure that this module logger always logs no matter what
+    # the selected level is.
+    coloredlogs.install(level="DEBUG", milliseconds=True)
+    logging.getLogger().setLevel(options.log_level)
+    logger.setLevel("INFO")
+
     uvloop.install()
 
     if options.command == "run":
         hit_count = [RawValue("l", 0) for _ in range(options.processes)]
         staleness = [RawValue("f", 0) for _ in range(options.processes)]
 
+        if options.partition_count * options.processes < PARTITION_COUNT:
+            logger.warning(
+                f"partition_count * processes < {PARTITION_COUNT}. Not all partitions will be processed."
+            )
+
         for i in range(options.processes):
             enabled_partitions = sorted(
-                (i + j) % PARTITION_COUNT for j in range(options.partition_count)
+                (i * options.partition_count + j) % PARTITION_COUNT
+                for j in range(options.partition_count)
             )
 
             job = Process(
@@ -181,4 +192,4 @@ if __name__ == "__main__":
         asyncio.run(report(hit_count, staleness))
 
     elif options.command == "populate":
-        asyncio.run(populate(options.number, options.parallel))
+        asyncio.run(populate(options.number, options.parallelism))
