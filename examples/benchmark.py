@@ -28,7 +28,6 @@ from typing import List
 from typing import Optional
 
 import coloredlogs
-import uvloop
 
 from pyncette import Context
 from pyncette import ExecutionMode
@@ -98,8 +97,25 @@ async def run(
         await app_context.run()
 
 
-def _run(*args: Any, **kwargs: Any) -> None:
+def _run(log_level: str, *args: Any, **kwargs: Any) -> None:
+    # On Windows we need to setup logging again as forking is not supported
+    setup(log_level)
     asyncio.run(run(*args, **kwargs))
+
+
+def setup(log_level: str) -> None:
+    # Make sure that this module logger always logs no matter what
+    # the selected level is.
+    coloredlogs.install(level="DEBUG", milliseconds=True)
+    logging.getLogger().setLevel(log_level)
+    logger.setLevel("INFO")
+
+    try:
+        import uvloop
+
+        uvloop.install()
+    except ImportError:
+        logger.info("uvloop is not available, ignoring.")
 
 
 async def report(
@@ -158,27 +174,36 @@ if __name__ == "__main__":
     )
 
     options = parser.parse_args()
-    coloredlogs.install(level="INFO", milliseconds=True, logger=logger)
-    coloredlogs.install(level=options.log_level, milliseconds=True)
-    uvloop.install()
+    setup(options.log_level)
 
     if options.command == "run":
         hit_count = [RawValue("l", 0) for _ in range(options.processes)]
         staleness = [RawValue("f", 0) for _ in range(options.processes)]
 
+        if options.partition_count * options.processes < PARTITION_COUNT:
+            logger.warning(
+                f"partition_count * processes < {PARTITION_COUNT}. Not all partitions will be processed."
+            )
+
         for i in range(options.processes):
             enabled_partitions = sorted(
-                (i + j) % PARTITION_COUNT for j in range(options.partition_count)
+                (i * options.partition_count + j) % PARTITION_COUNT
+                for j in range(options.partition_count)
             )
 
             job = Process(
                 target=_run,
                 name=str(i),
-                args=(hit_count[i], staleness[i], list(enabled_partitions)),
+                args=(
+                    options.log_level,
+                    hit_count[i],
+                    staleness[i],
+                    list(enabled_partitions),
+                ),
             )
             job.start()
 
         asyncio.run(report(hit_count, staleness))
 
     elif options.command == "populate":
-        asyncio.run(populate(options.number, options.parallel))
+        asyncio.run(populate(options.number, options.parallelism))
