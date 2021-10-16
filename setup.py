@@ -24,12 +24,12 @@ def read(*names, **kwargs):
 
 
 extras = {
-    "redis": ["aioredis>=1.3.1"],
-    "prometheus": ["prometheus_client>=0.8.0"],
-    "postgres": ["asyncpg>=0.20.1"],
-    "dynamodb": ["aioboto3>=8.3.0"],
+    "redis": ["aioredis>=2.0.0"],
+    "prometheus": ["prometheus_client>=0.11.0"],
+    "postgres": ["asyncpg>=0.24.0"],
+    "dynamodb": ["aioboto3>=9.2.2"],
     "mysql": ["aiomysql>=0.0.21", "cryptography>=3.4.7"],
-    "uvloop": ["uvloop>=0.15.2"],
+    "uvloop": ["uvloop>=0.16.0"],
 }
 
 setup(
@@ -65,6 +65,7 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
     ],
@@ -79,10 +80,10 @@ setup(
     python_requires=">=3.7",
     install_requires=[
         "typing-extensions>=3.7.4.2",
-        "croniter>=0.3.34",
-        "aiosqlite>=0.13.0",
-        "aiohttp>=3.6.2",
-        "python-dateutil>=2.8.1",
+        "croniter>=1.0.15",
+        "aiosqlite>=0.17.0",
+        "aiohttp>=3.7.4",
+        "python-dateutil>=2.8.2",
         "coloredlogs",
     ],
     extras_require={

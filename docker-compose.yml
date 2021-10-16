@@ -38,7 +38,6 @@ services:
       context: .
       dockerfile: Dockerfile.dev
     command: bash
-    user: ${UID_GID-}
     working_dir: /src
     environment:
       POSTGRES_URL: "postgres://postgres:password@postgres/pyncette"

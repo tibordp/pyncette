@@ -55,13 +55,10 @@ class _LuaScript:
 
         for _ in range(3):
             try:
-                return await client.evalsha(self._sha, keys=keys, args=args)
-            except aioredis.ReplyError as err:
-                if str(err).startswith("NOSCRIPT"):
-                    logger.warning("We seem to have lost the LUA script, reloading...")
-                    await self.register(client)
-                else:
-                    raise
+                return await client.evalsha(self._sha, len(keys), *keys, *args)
+            except aioredis.exceptions.NoScriptError:
+                logger.warning("We seem to have lost the LUA script, reloading...")
+                await self.register(client)
 
         raise PyncetteException("Could not reload the Lua script.")
 
@@ -294,11 +291,7 @@ class RedisRepository(Repository):
 @contextlib.asynccontextmanager
 async def redis_repository(**kwargs: Any) -> AsyncIterator[RedisRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
-    redis_pool = await aioredis.create_redis_pool(kwargs["redis_url"])
-    try:
+    async with aioredis.from_url(kwargs["redis_url"]) as redis_pool:
         repository = RedisRepository(redis_pool, **kwargs)
         await repository.register_scripts()
         yield repository
-    finally:
-        redis_pool.close()
-        await redis_pool.wait_closed()
