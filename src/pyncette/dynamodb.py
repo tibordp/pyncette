@@ -448,7 +448,8 @@ async def dynamodb_repository(
     **kwargs: Any,
 ) -> AsyncIterator[DynamoDBRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
-    async with aioboto3.resource(
+    session = aioboto3.Session()
+    async with session.resource(
         "dynamodb",
         region_name=dynamodb_region_name,
         endpoint_url=dynamodb_endpoint,

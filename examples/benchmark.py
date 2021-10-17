@@ -83,8 +83,8 @@ async def populate(n: int, parallel: int) -> None:
 
 
 async def run(
-    hit_count: RawValue,
-    staleness: RawValue,
+    hit_count: Any,
+    staleness: Any,
     enabled_partitions: Optional[List[int]],
 ) -> None:
 
@@ -119,8 +119,8 @@ def setup(log_level: str) -> None:
 
 
 async def report(
-    hit_counts: List[RawValue],
-    stalenesses: List[RawValue],
+    hit_counts: List[Any],
+    stalenesses: List[Any],
 ) -> None:
     previous_hit_count = 0
     previous_sample = time.perf_counter()
