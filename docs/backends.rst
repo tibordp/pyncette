@@ -84,6 +84,8 @@ The MySQL backend requires MySQL version 8.0+.
 
 The table will be automatically initialized on startup if it does not exists unless ``mysql_skip_table_create`` is set to ``True``.
 
+.. caution:: MySQL backend currently does not work with Python 3.10 due to an issue with an upstream library.
+
 
 Amazon DynamoDB
 ---------------

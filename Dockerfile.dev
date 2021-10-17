@@ -11,7 +11,7 @@ RUN apt-get update -y \
         python3.9 \
         python3.10 \
         python3-pip \
-        python3-distutils \
+        python3.10-distutils \
         python3-apt \
         redis-tools \
         postgresql-client \
