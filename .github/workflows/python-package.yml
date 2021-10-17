@@ -10,11 +10,11 @@ jobs:
     strategy:
       matrix:
         environment:
-          - python-version: "3.8"
+          - python-version: "3.9"
             toxenv: check
-          - python-version: "3.8"
+          - python-version: "3.9"
             toxenv: docs
-          - python-version: "3.8"
+          - python-version: "3.9"
             toxenv: py38
           - python-version: "3.7"
             toxenv: py37    
