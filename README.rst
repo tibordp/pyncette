@@ -146,7 +146,7 @@ Pyncette comes with an implementation for the following backends (used for persi
 - SQLite (included)
 - Redis (``pip install pyncette[redis]``)
 - PostgreSQL (``pip install pyncette[postgres]``)
-- MySQL 8.0+ (``pip install pyncette[mysql]`` - [does not work on Python 3.10](https://github.com/aio-libs/aiomysql/issues/624))
+- MySQL 8.0+ (``pip install pyncette[mysql]`` - `does not work on Python 3.10 <https://github.com/aio-libs/aiomysql/issues/624>`_)
 - Amazon DynamoDB (``pip install pyncette[dynamodb]``)
 
 Pyncette imposes few requirements on the underlying datastores, so it can be extended to support other databases or
