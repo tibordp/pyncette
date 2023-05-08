@@ -47,15 +47,11 @@ app = Pyncette(
 PARTITION_COUNT = 32
 
 
-@app.partitioned_task(
-    partition_count=PARTITION_COUNT, execution_mode=ExecutionMode.AT_LEAST_ONCE
-)
+@app.partitioned_task(partition_count=PARTITION_COUNT, execution_mode=ExecutionMode.AT_LEAST_ONCE)
 async def benchmark_task(context: Context) -> None:
     context.hit_count.value += 1
     if context.app_context.last_tick is not None:
-        context.staleness.value = (
-            datetime.datetime.now(datetime.timezone.utc) - context.app_context.last_tick
-        ).total_seconds()
+        context.staleness.value = (datetime.datetime.now(datetime.timezone.utc) - context.app_context.last_tick).total_seconds()
 
 
 async def populate(n: int, parallel: int) -> None:
@@ -65,11 +61,7 @@ async def populate(n: int, parallel: int) -> None:
         tasks = []
         for i in range(n):
             interval = datetime.timedelta(seconds=random.randrange(10, 3600))
-            tasks.append(
-                app_context.schedule_task(
-                    benchmark_task, str(uuid.uuid4()), interval=interval
-                )
-            )
+            tasks.append(app_context.schedule_task(benchmark_task, str(uuid.uuid4()), interval=interval))
 
             if len(tasks) == parallel:
                 await asyncio.gather(*tasks)
@@ -87,7 +79,6 @@ async def run(
     staleness: Any,
     enabled_partitions: Optional[List[int]],
 ) -> None:
-
     async with app.create() as app_context:
         app_context.add_to_context("hit_count", hit_count)
         app_context.add_to_context("staleness", staleness)
@@ -132,29 +123,19 @@ async def report(
         staleness = max(c.value for c in stalenesses)
         now = time.perf_counter()
 
-        logger.info(
-            "{:10.2f} RPS, Staleness {:.2f}s".format(
-                (hit_count - previous_hit_count) / (now - previous_sample), staleness
-            )
-        )
+        logger.info(f"{(hit_count - previous_hit_count) / (now - previous_sample):10.2f} RPS, Staleness {staleness:.2f}s")
 
         previous_hit_count = hit_count
         previous_sample = now
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter
-    )
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("--log-level", default="WARNING")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    populate_option = subparsers.add_parser(
-        "populate", help="Populate the backend with a large number of tasks"
-    )
-    populate_option.add_argument(
-        "-n", "--number", type=int, default=10000, help="Number of tasks to insert"
-    )
+    populate_option = subparsers.add_parser("populate", help="Populate the backend with a large number of tasks")
+    populate_option.add_argument("-n", "--number", type=int, default=10000, help="Number of tasks to insert")
     populate_option.add_argument(
         "-p",
         "--parallelism",
@@ -163,9 +144,7 @@ if __name__ == "__main__":
         help="How many tasks to insert in parallel",
     )
     run_option = subparsers.add_parser("run", help="Run the Pyncette app")
-    run_option.add_argument(
-        "--processes", type=int, default=1, help="Number of processes to run"
-    )
+    run_option.add_argument("--processes", type=int, default=1, help="Number of processes to run")
     run_option.add_argument(
         "--partition-count",
         type=int,
@@ -181,15 +160,10 @@ if __name__ == "__main__":
         staleness = [RawValue("f", 0) for _ in range(options.processes)]
 
         if options.partition_count * options.processes < PARTITION_COUNT:
-            logger.warning(
-                f"partition_count * processes < {PARTITION_COUNT}. Not all partitions will be processed."
-            )
+            logger.warning(f"partition_count * processes < {PARTITION_COUNT}. Not all partitions will be processed.")
 
         for i in range(options.processes):
-            enabled_partitions = sorted(
-                (i * options.partition_count + j) % PARTITION_COUNT
-                for j in range(options.partition_count)
-            )
+            enabled_partitions = sorted((i * options.partition_count + j) % PARTITION_COUNT for j in range(options.partition_count))
 
             job = Process(
                 target=_run,

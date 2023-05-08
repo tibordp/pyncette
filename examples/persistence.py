@@ -62,8 +62,9 @@ redis_app = Pyncette(
     batch_size=10,
 )
 
+
 mysql_app = Pyncette(
-    repository_factory=mysql_repository,
+    repository_factory=mysql_repository,  # type: ignore
     # MySQL host
     mysql_host="localhost",
     # MySQL database name
@@ -71,7 +72,7 @@ mysql_app = Pyncette(
     # MySQL username
     mysql_user="pyncette",
     # Optional MySQL password
-    mysql_password="password",
+    mysql_password="password",  # noqa: S106
     # The table name
     mysql_table_name="example123",
     # Optional MySQL port

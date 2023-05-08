@@ -31,9 +31,7 @@ def with_heartbeat(
             body = asyncio.ensure_future(func(context))
 
             async def _heartbeater() -> None:
-                delay_duration = (
-                    context.task.lease_duration.total_seconds() * lease_remaining_ratio
-                )
+                delay_duration = context.task.lease_duration.total_seconds() * lease_remaining_ratio
                 while True:
                     await asyncio.sleep(delay_duration)
                     try:
@@ -48,9 +46,7 @@ def with_heartbeat(
                     except Exception as e:
                         # There may be transient errors while heartbeating. In this case
                         # ignore them until the next heartbeat interval.
-                        logger.warning(
-                            f"Heartbeating on {context.task} failed", exc_info=e
-                        )
+                        logger.warning(f"Heartbeating on {context.task} failed", exc_info=e)
 
             heartbeater = asyncio.create_task(_heartbeater())
             try:

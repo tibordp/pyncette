@@ -62,9 +62,7 @@ class SqliteRepository(Repository):
         if self._batch_size < 1:
             raise ValueError("Batch size must be greater than 0")
         if not re.match(r"^[a-z_]+$", self._table_name):
-            raise ValueError(
-                "Table name can only contain lower-case letters and underscores"
-            )
+            raise ValueError("Table name can only contain lower-case letters and underscores")
 
     async def initialize(self) -> None:
         async with self._transaction():
@@ -102,10 +100,7 @@ class SqliteRepository(Repository):
                 (task.canonical_name, _to_timestamp(utc_now), self._batch_size),
             )
 
-            concrete_tasks = [
-                task.instantiate_from_spec(json.loads(record["task_spec"]))
-                for record in ready_tasks
-            ]
+            concrete_tasks = [task.instantiate_from_spec(json.loads(record["task_spec"])) for record in ready_tasks]
 
             await self._connection.executemany(
                 f"""
@@ -125,13 +120,8 @@ class SqliteRepository(Repository):
                 ],
             )
             return QueryResponse(
-                tasks=[
-                    (concrete_task, Lease(locked_by))
-                    for concrete_task in concrete_tasks
-                ],
-                continuation_token=_CONTINUATION_TOKEN
-                if len(concrete_tasks) == self._batch_size
-                else None,
+                tasks=[(concrete_task, Lease(locked_by)) for concrete_task in concrete_tasks],
+                continuation_token=_CONTINUATION_TOKEN if len(concrete_tasks) == self._batch_size else None,
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
@@ -157,9 +147,7 @@ class SqliteRepository(Repository):
                     {
                         "name": task.canonical_name,
                         "task_spec": json.dumps(task.as_spec()),
-                        "execute_after": _to_timestamp(
-                            task.get_next_execution(utc_now, None)
-                        ),
+                        "execute_after": _to_timestamp(task.get_next_execution(utc_now, None)),
                     },
                 )
             else:
@@ -172,9 +160,7 @@ class SqliteRepository(Repository):
                         "name": task.canonical_name,
                         "parent_name": task.parent_task.canonical_name,
                         "task_spec": json.dumps(task.as_spec()),
-                        "execute_after": _to_timestamp(
-                            task.get_next_execution(utc_now, None)
-                        ),
+                        "execute_after": _to_timestamp(task.get_next_execution(utc_now, None)),
                     },
                 )
 
@@ -185,9 +171,7 @@ class SqliteRepository(Repository):
                 (task.canonical_name,),
             )
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None) -> PollResponse:
         async with self._transaction(explicit_begin=True):
             records = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = ?",
@@ -213,25 +197,16 @@ class SqliteRepository(Repository):
                 )
             else:
                 record = next(iter(records))
-                execute_after = cast(
-                    datetime.datetime, _from_timestamp(record["execute_after"])
-                )
+                execute_after = cast(datetime.datetime, _from_timestamp(record["execute_after"]))
                 locked_until = _from_timestamp(record["locked_until"])
                 locked_by = record["locked_by"]
 
             assert execute_after is not None
             scheduled_at = execute_after
 
-            if (
-                locked_until is not None
-                and locked_until > utc_now
-                and (lease != locked_by)
-            ):
+            if locked_until is not None and locked_until > utc_now and (lease != locked_by):
                 result = ResultType.LOCKED
-            elif (
-                execute_after <= utc_now
-                and task.execution_mode == ExecutionMode.AT_MOST_ONCE
-            ):
+            elif execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_MOST_ONCE:
                 execute_after = task.get_next_execution(utc_now, execute_after)
                 result = ResultType.READY
                 locked_until = None
@@ -242,10 +217,7 @@ class SqliteRepository(Repository):
                     locked_by,
                     execute_after,
                 )
-            elif (
-                execute_after <= utc_now
-                and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
-            ):
+            elif execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_LEAST_ONCE:
                 locked_until = utc_now + task.lease_duration
                 locked_by = uuid.uuid4()
                 result = ResultType.READY
@@ -258,13 +230,9 @@ class SqliteRepository(Repository):
             else:
                 result = ResultType.PENDING
 
-            return PollResponse(
-                result=result, scheduled_at=scheduled_at, lease=locked_by
-            )
+            return PollResponse(result=result, scheduled_at=scheduled_at, lease=locked_by)
 
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         async with self._transaction(explicit_begin=True):
             records = await self._connection.execute_fetchall(
                 f"SELECT * FROM {self._table_name} WHERE name = $1",
@@ -280,13 +248,7 @@ class SqliteRepository(Repository):
                 logger.warning(f"Lease lost on task {task}, skipping.")
                 return
 
-            execute_after = (
-                datetime.datetime.fromtimestamp(
-                    record["execute_after"], dateutil.tz.UTC
-                )
-                if record["execute_after"]
-                else None
-            )
+            execute_after = datetime.datetime.fromtimestamp(record["execute_after"], dateutil.tz.UTC) if record["execute_after"] else None
             await self._update_record(
                 task,
                 None,
@@ -294,9 +256,7 @@ class SqliteRepository(Repository):
                 task.get_next_execution(utc_now, execute_after),
             )
 
-    async def extend_lease(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> Optional[Lease]:
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Optional[Lease]:
         async with self._transaction():
             locked_until = utc_now + task.lease_duration
             async with await self._connection.execute(
@@ -313,9 +273,7 @@ class SqliteRepository(Repository):
                 else:
                     return None
 
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         async with self._transaction():
             await self._connection.execute_fetchall(
                 f"""
@@ -377,9 +335,7 @@ class SqliteRepository(Repository):
 async def sqlite_repository(**kwargs: Any) -> AsyncIterator[SqliteRepository]:
     """Factory context manager for Sqlite repository that initializes the connection to Sqlite"""
 
-    async with aiosqlite.connect(
-        kwargs.get("sqlite_database", ":memory:")
-    ) as connection:
+    async with aiosqlite.connect(kwargs.get("sqlite_database", ":memory:")) as connection:
         connection.row_factory = aiosqlite.Row
         repository = SqliteRepository(connection, **kwargs)
         await repository.initialize()

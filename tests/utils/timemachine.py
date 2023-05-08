@@ -64,9 +64,7 @@ class TimeMachine:
             ScheduledTask(self.offset + datetime.timedelta(seconds=delay), future),
         )
         future.add_done_callback(self._remove_cancelled_sleep)
-        logger.debug(
-            f"Registering sleep {id(future)} for {delay}s (resume at T+{self.offset + datetime.timedelta(seconds=delay)})"
-        )
+        logger.debug(f"Registering sleep {id(future)} for {delay}s (resume at T+{self.offset + datetime.timedelta(seconds=delay)})")
         return future
 
     def wait_for(self, fut, timeout, *args, **kwargs):
@@ -140,11 +138,7 @@ class TimeMachine:
     def _remove_cancelled_sleep(self, fut):
         if fut.cancelled:
             try:
-                self.callbacks = [
-                    callback
-                    for callback in self.callbacks
-                    if callback.future is not fut
-                ]
+                self.callbacks = [callback for callback in self.callbacks if callback.future is not fut]
                 heapq.heapify(self.callbacks)
                 logger.debug(f"Removed cancelled sleep {id(fut)}")
             except ValueError:

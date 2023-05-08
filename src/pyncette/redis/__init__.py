@@ -9,12 +9,9 @@ from dataclasses import dataclass
 from importlib.resources import read_text
 from typing import Any
 from typing import AsyncIterator
-from typing import Dict
-from typing import List
-from typing import Optional
-from typing import Tuple
 
-import aioredis
+import redis
+from redis import asyncio as aioredis
 
 from pyncette.errors import PyncetteException
 from pyncette.model import ContinuationToken
@@ -35,7 +32,7 @@ class _LuaScript:
     """A wrapper for Redis lua scripts that automaticaly reloads it if e.g. SCRIPT FLUSH is invoked"""
 
     _script: str
-    _sha: Optional[str]
+    _sha: str | None
 
     def __init__(self, script_path: str):
         self._script = read_text(__name__, script_path)
@@ -47,16 +44,19 @@ class _LuaScript:
     async def execute(
         self,
         client: aioredis.Redis,
-        keys: List[Any] = [],
-        args: List[Any] = [],
+        keys: list[Any] | None = None,
+        args: list[Any] | None = None,
     ) -> Any:
         if self._sha is None:
             await self.register(client)
 
+        keys = keys or []
+        args = args or []
+
         for _ in range(3):
             try:
                 return await client.evalsha(self._sha, len(keys), *keys, *args)
-            except aioredis.exceptions.NoScriptError:
+            except redis.exceptions.NoScriptError:
                 logger.warning("We seem to have lost the LUA script, reloading...")
                 await self.register(client)
 
@@ -67,28 +67,24 @@ class _LuaScript:
 class _ManageScriptResponse:
     result: ResultType
     version: int
-    execute_after: Optional[datetime.datetime]
-    locked_until: Optional[datetime.datetime]
-    task_spec: Optional[Dict[str, Any]]
-    locked_by: Optional[str]
+    execute_after: datetime.datetime | None
+    locked_until: datetime.datetime | None
+    task_spec: dict[str, Any] | None
+    locked_by: str | None
 
     @classmethod
-    def from_response(cls, response: List[bytes]) -> _ManageScriptResponse:
+    def from_response(cls, response: list[bytes]) -> _ManageScriptResponse:
         return cls(
             result=ResultType[response[0].decode()],
             version=int(response[1] or 0),
-            execute_after=None
-            if response[2] is None
-            else datetime.datetime.fromisoformat(response[2].decode()),
-            locked_until=None
-            if response[3] is None
-            else datetime.datetime.fromisoformat(response[3].decode()),
+            execute_after=None if response[2] is None else datetime.datetime.fromisoformat(response[2].decode()),
+            locked_until=None if response[3] is None else datetime.datetime.fromisoformat(response[3].decode()),
             locked_by=None if response[4] is None else response[4].decode(),
             task_spec=None if response[5] is None else json.loads(response[5]),
         )
 
 
-def _create_dynamic_task(task: Task, response_data: List[bytes]) -> Tuple[Task, Lease]:
+def _create_dynamic_task(task: Task, response_data: list[bytes]) -> tuple[Task, Lease]:
     task_data = _ManageScriptResponse.from_response(response_data)
     assert task_data.task_spec is not None
 
@@ -122,7 +118,7 @@ class RedisRepository(Repository):
         self,
         utc_now: datetime.datetime,
         task: Task,
-        continuation_token: Optional[ContinuationToken] = None,
+        continuation_token: ContinuationToken | None = None,
     ) -> QueryResponse:
         new_locked_until = utc_now + task.lease_duration
         response = await self._poll_dynamic_script.execute(
@@ -138,13 +134,8 @@ class RedisRepository(Repository):
         logger.debug(f"query_lua script returned [{self._batch_size}] {response}")
 
         return QueryResponse(
-            tasks=[
-                _create_dynamic_task(task, response_data)
-                for response_data in response[1:]
-            ],
-            continuation_token=_CONTINUATION_TOKEN
-            if response[0] == b"HAS_MORE"
-            else None,
+            tasks=[_create_dynamic_task(task, response_data) for response_data in response[1:]],
+            continuation_token=_CONTINUATION_TOKEN if response[0] == b"HAS_MORE" else None,
         )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
@@ -161,15 +152,13 @@ class RedisRepository(Repository):
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         await self._manage_record(task, "UNREGISTER")
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Lease | None = None) -> PollResponse:
         # Nominally, we need at least two round-trips to Redis since the next execute_after is calculated
         # in Python code due to extra flexibility. This is why we have optimistic locking below to ensure that
         # the next execution time was calculated using a correct base if another process modified it in between.
         # In most cases, however, we can assume that the base time has not changed since the last invocation,
         # so by caching it, we can poll a task using a single round-trip (if we are wrong, the loop below will still
-        # ensure corretness as the version will not match).
+        # ensure correctness as the version will not match).
         last_lease = getattr(task, "_last_lease", None)
         if isinstance(lease, _ManageScriptResponse):
             version, execute_after, locked_by = (
@@ -221,13 +210,9 @@ class RedisRepository(Repository):
                     lease=Lease(response),
                 )
 
-        raise PyncetteException(
-            "Unable to acquire the lock on the task due to contention"
-        )
+        raise PyncetteException("Unable to acquire the lock on the task due to contention")
 
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         assert isinstance(lease, _ManageScriptResponse)
         next_execution = task.get_next_execution(utc_now, lease.execute_after)
         response = await self._manage_record(
@@ -241,25 +226,17 @@ class RedisRepository(Repository):
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not commiting, as we have lost the lease")
 
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         assert isinstance(lease, _ManageScriptResponse)
-        response = await self._manage_record(
-            task, "UNLOCK", lease.version, lease.locked_by
-        )
+        response = await self._manage_record(task, "UNLOCK", lease.version, lease.locked_by)
         task._last_lease = response  # type: ignore
         if response.result == ResultType.LEASE_MISMATCH:
             logger.info("Not unlocking, as we have lost the lease")
 
-    async def extend_lease(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> Optional[Lease]:
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Lease | None:
         assert isinstance(lease, _ManageScriptResponse)
         new_locked_until = utc_now + task.lease_duration
-        response = await self._manage_record(
-            task, "EXTEND", lease.version, lease.locked_by, new_locked_until.isoformat()
-        )
+        response = await self._manage_record(task, "EXTEND", lease.version, lease.locked_by, new_locked_until.isoformat())
         task._last_lease = response  # type: ignore
 
         if response.result == ResultType.READY:
@@ -282,7 +259,7 @@ class RedisRepository(Repository):
     def _get_task_record_key(self, task: Task) -> str:
         return f"pyncette:{self._namespace}:task:{task.canonical_name}"
 
-    def _get_task_index_key(self, task: Optional[Task]) -> str:
+    def _get_task_index_key(self, task: Task | None) -> str:
         # A prefix-coded index key, so there are no restrictions on task names.
         index_name = f"index:{task.canonical_name}" if task else "index"
         return f"pyncette:{self._namespace}:{index_name}"
@@ -291,6 +268,9 @@ class RedisRepository(Repository):
 @contextlib.asynccontextmanager
 async def redis_repository(**kwargs: Any) -> AsyncIterator[RedisRepository]:
     """Factory context manager for Redis repository that initializes the connection to Redis"""
+    if not isinstance(kwargs["redis_url"], str):
+        raise PyncetteException("Redis URL is required")
+
     async with aioredis.from_url(kwargs["redis_url"]) as redis_pool:
         repository = RedisRepository(redis_pool, **kwargs)
         await repository.register_scripts()

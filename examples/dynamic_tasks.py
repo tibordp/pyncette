@@ -13,7 +13,7 @@ dynamic task instances.
 import asyncio
 import datetime
 import logging
-import os
+import pathlib
 import random
 import sys
 
@@ -41,7 +41,7 @@ async def greeter(context: Context) -> None:
 
 async def main() -> None:
     async with app.create() as ctx:
-        with open(os.path.join(sys.path[0], "data", "usernames.txt")) as f:
+        with (pathlib.Path(sys.path[0]) / "data" / "usernames.txt").open() as f:
             usernames = f.read().splitlines()
 
         for username in usernames:

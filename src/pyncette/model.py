@@ -8,14 +8,9 @@ from typing import Any
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
-from typing import Dict
-from typing import List
 from typing import NewType
-from typing import Optional
-from typing import Tuple
+from typing import Protocol
 from typing import TypeVar
-
-from typing_extensions import Protocol
 
 T = TypeVar("T")
 Decorator = Callable[[T], T]
@@ -33,12 +28,12 @@ class Heartbeater(Protocol):
 class Context:
     """Task execution context. This class can have dynamic attributes."""
 
-    app_context: "pyncette.PyncetteContext"
-    task: "pyncette.task.Task"
+    app_context: pyncette.PyncetteContext
+    task: pyncette.task.Task
     scheduled_at: datetime.datetime
-    _lease: Optional[Lease]
+    _lease: Lease | None
     heartbeat: Heartbeater
-    args: Dict[str, Any]
+    args: dict[str, Any]
 
     if TYPE_CHECKING:
 
@@ -70,7 +65,7 @@ class MiddlewareFunc(Protocol):
 
 
 class FixtureFunc(Protocol):
-    def __call__(self, app_context: "pyncette.PyncetteContext") -> AsyncIterator[Any]:
+    def __call__(self, app_context: pyncette.PyncetteContext) -> AsyncIterator[Any]:
         "Executes the fixture"
 
 
@@ -105,15 +100,15 @@ class PollResponse:
 
     result: ResultType
     scheduled_at: datetime.datetime
-    lease: Optional[Lease]
+    lease: Lease | None
 
 
 @dataclass
 class QueryResponse:
     """The result of a task query"""
 
-    tasks: List[Tuple["pyncette.task.Task", Lease]]
-    continuation_token: Optional[ContinuationToken]
+    tasks: list[tuple[pyncette.task.Task, Lease]]
+    continuation_token: ContinuationToken | None
 
 
 if TYPE_CHECKING:

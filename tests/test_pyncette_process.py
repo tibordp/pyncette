@@ -10,7 +10,7 @@ import pytest
 @pytest.mark.integration
 def test_signal_handling():
     with subprocess.Popen(
-        ["coverage", "run", "-m", "tests.test_pyncette_process"],
+        ["coverage", "run", "-m", "tests.test_pyncette_process"],  # noqa: S603,S607
         env={**os.environ, "LOG_LEVEL": "DEBUG"},
     ) as proc:
         time.sleep(2)
@@ -23,7 +23,7 @@ def test_signal_handling():
 @pytest.mark.integration
 def test_signal_handling_uvloop():
     with subprocess.Popen(
-        ["coverage", "run", "-m", "tests.test_pyncette_process"],
+        ["coverage", "run", "-m", "tests.test_pyncette_process"],  # noqa: S603,S607
         env={**os.environ, "LOG_LEVEL": "DEBUG", "USE_UVLOOP": "1"},
     ) as proc:
         time.sleep(2)
@@ -36,7 +36,7 @@ def test_signal_handling_uvloop():
 @pytest.mark.integration
 def test_signal_handling_force():
     with subprocess.Popen(
-        ["coverage", "run", "-m", "tests.test_pyncette_process"],
+        ["coverage", "run", "-m", "tests.test_pyncette_process"],  # noqa: S603,S607
         env={**os.environ, "LOG_LEVEL": "DEBUG"},
     ) as proc:
         time.sleep(2)

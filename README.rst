@@ -146,7 +146,7 @@ Pyncette comes with an implementation for the following backends (used for persi
 - SQLite (included)
 - Redis (``pip install pyncette[redis]``)
 - PostgreSQL (``pip install pyncette[postgres]``)
-- MySQL 8.0+ (``pip install pyncette[mysql]`` - `does not work on Python 3.10 <https://github.com/aio-libs/aiomysql/issues/624>`_)
+- MySQL 8.0+ (``pip install pyncette[mysql]``)
 - Amazon DynamoDB (``pip install pyncette[dynamodb]``)
 
 Pyncette imposes few requirements on the underlying datastores, so it can be extended to support other databases or
@@ -167,16 +167,13 @@ To run the all tests run::
 
 Alternatively, there is a Docker Compose environment that will set up all the backends so that integration tests can run seamlessly::
 
-    # If you want the Docker environment to run as current user
-    # to avoid writing files as root.
-    export UID_GID="$(id -u):$(id -g)"
     docker-compose up -d
     docker-compose run --rm shell
     tox
 
 To run just the unit tests (excluding integration tests)::
 
-    tox -e py38  # or py37, py39
+    tox -e py310  # or your Python version of choice
 
 Note, to combine the coverage data from all the tox environments run:
 

@@ -3,10 +3,11 @@ import os
 
 import pymysql
 import pytest
-from conftest import random_table_name
 
 from pyncette import mysql
 from pyncette.task import Task
+
+from conftest import random_table_name
 
 DUMMY_TASK = Task(name="foo", func=object(), schedule="* * * * *")
 
@@ -37,6 +38,6 @@ async def test_skip_table_create():
             mysql_skip_table_create=True,
         ) as repository:
             await repository.poll_task(
-                datetime.datetime.utcnow(),
+                datetime.datetime.now(tz=datetime.timezone.utc),
                 DUMMY_TASK,
             )

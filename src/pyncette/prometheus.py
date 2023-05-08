@@ -65,7 +65,7 @@ class OperationMetricSet:
         )
 
     @contextlib.asynccontextmanager
-    async def measure(self, **labels: Dict[str, str]) -> AsyncIterator[None]:
+    async def measure(self, **labels: str) -> AsyncIterator[None]:
         """An async context manager that measures the execution of the wrapped code"""
         if labels:
             self.requests_in_progress.labels(**labels).inc()
@@ -82,9 +82,7 @@ class OperationMetricSet:
             raise e from None
         finally:
             if labels:
-                self.requests_duration.labels(**labels).observe(
-                    time.perf_counter() - before_time
-                )
+                self.requests_duration.labels(**labels).observe(time.perf_counter() - before_time)
                 self.requests_in_progress.labels(**labels).dec()
             else:
                 self.requests_duration.observe(time.perf_counter() - before_time)
@@ -105,52 +103,37 @@ class MeteredRepository(Repository):
         continuation_token: Optional[ContinuationToken] = None,
     ) -> QueryResponse:
         """Queries the dynamic tasks for execution"""
-        async with self._metric_set.measure(
-            operation="poll_dynamic_task", **_get_task_labels(task)
-        ):
-            return await self._inner.poll_dynamic_task(
-                utc_now, task, continuation_token
-            )
+        async with self._metric_set.measure(operation="poll_dynamic_task", **_get_task_labels(task)):
+            return await self._inner.poll_dynamic_task(utc_now, task, continuation_token)
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Registers a dynamic task"""
-        async with self._metric_set.measure(
-            operation="register_task", **_get_task_labels(task)
-        ):
+        async with self._metric_set.measure(operation="register_task", **_get_task_labels(task)):
             return await self._inner.register_task(utc_now, task)
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Deregisters a dynamic task implementation"""
-        async with self._metric_set.measure(
-            operation="unregister_task", **_get_task_labels(task)
-        ):
+        async with self._metric_set.measure(operation="unregister_task", **_get_task_labels(task)):
             return await self._inner.unregister_task(utc_now, task)
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None) -> PollResponse:
         """Polls the task to determine whether it is ready for execution"""
-        async with self._metric_set.measure(
-            operation="poll_task", **_get_task_labels(task)
-        ):
+        async with self._metric_set.measure(operation="poll_task", **_get_task_labels(task)):
             return await self._inner.poll_task(utc_now, task, lease)
 
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         """Commits the task, which signals a successful run."""
-        async with self._metric_set.measure(
-            operation="commit_task", **_get_task_labels(task)
-        ):
+        async with self._metric_set.measure(operation="commit_task", **_get_task_labels(task)):
             return await self._inner.commit_task(utc_now, task, lease)
 
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Optional[Lease]:
+        """Extends the lease on the task. Returns the new lease if lease was still valid."""
+        async with self._metric_set.measure(operation="extend_lease", **_get_task_labels(task)):
+            return await self._inner.extend_lease(utc_now, task, lease)
+
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         """Unlocks the task, making it eligible for retries in case execution failed."""
-        async with self._metric_set.measure(
-            operation="unlock_task", **_get_task_labels(task)
-        ):
+        async with self._metric_set.measure(operation="unlock_task", **_get_task_labels(task)):
             return await self._inner.unlock_task(utc_now, task, lease)
 
 
@@ -183,9 +166,7 @@ _task_staleness = Histogram(
 )
 
 
-async def prometheus_middleware(
-    context: Context, next: Callable[[], Awaitable[None]]
-) -> None:
+async def prometheus_middleware(context: Context, next: Callable[[], Awaitable[None]]) -> None:
     """Middleware that exposes task execution metrics to Prometheus"""
     labels = _get_task_labels(context.task)
     staleness = pyncette._current_time() - context.scheduled_at
@@ -194,9 +175,7 @@ async def prometheus_middleware(
         await next()
 
 
-_repository_metric_set = OperationMetricSet(
-    "repository_ops", ["operation", *TASK_LABELS]
-)
+_repository_metric_set = OperationMetricSet("repository_ops", ["operation", *TASK_LABELS])
 
 _ticks_metric_set = OperationMetricSet("ticks", [])
 

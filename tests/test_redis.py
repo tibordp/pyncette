@@ -1,7 +1,7 @@
 import os
 
-import aioredis
 import pytest
+from redis import asyncio as aioredis
 
 from pyncette import redis
 
