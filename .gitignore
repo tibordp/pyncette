@@ -72,3 +72,6 @@ docs/_build
 
 ##  VSCode
 .vscode/tags
+
+## Pyncette
+pyncette.db

@@ -16,7 +16,7 @@ execution among them, making sure that tasks are only executed by one of them on
 This example illustrates dynamic tasks i.e. tasks that are not pre-defined in code and
 can be scheduled at runtime.
 
-Marking the function with `@app.dynamic_task` serves as a template and individual task 
+Marking the function with `@app.dynamic_task` serves as a template and individual task
 instances can be scheduled with `schedule_task` (and unscheduled with `unschedule_task`).
 
 Using a persistent backend, Pyncette supports efficient execution of a large number of
@@ -93,7 +93,7 @@ To run this example, configure the selected backend in the Pyncette constructor,
 python examples/benchmark.py populate -n <number of tasks to insert>
 ```
 
-While the tasks are populating you can run 
+While the tasks are populating you can run
 ```
 python examples/benchmark.py run --processes <# of processes>
 ```

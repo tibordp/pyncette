@@ -3,6 +3,7 @@ import logging
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
+from typing import Optional
 
 from aiohttp import web
 
@@ -24,10 +25,8 @@ async def default_healthcheck(app_context: PyncetteContext) -> bool:
 def use_healthcheck_server(
     app: Pyncette,
     port: int = 8080,
-    bind_address: str = None,
-    healthcheck_handler: Callable[
-        [PyncetteContext], Awaitable[bool]
-    ] = default_healthcheck,
+    bind_address: Optional[str] = None,
+    healthcheck_handler: Callable[[PyncetteContext], Awaitable[bool]] = default_healthcheck,
 ) -> None:
     """
     Decorate Pyncette app with a healthcheck endpoint served as a HTTP endpoint.

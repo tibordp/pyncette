@@ -9,8 +9,6 @@ import uuid
 from dataclasses import dataclass
 from typing import Any
 from typing import AsyncIterator
-from typing import Dict
-from typing import Optional
 from typing import cast
 
 import aioboto3
@@ -35,24 +33,24 @@ MAX_OPTIMISTIC_RETRY_COUNT = 5
 
 @dataclass
 class _TaskRecord:
-    execute_after: Optional[datetime.datetime]
-    locked_until: Optional[datetime.datetime]
-    locked_by: Optional[str]
+    execute_after: datetime.datetime | None
+    locked_until: datetime.datetime | None
+    locked_by: str | None
     version: int
 
     @staticmethod
-    def _parse_date(s: Optional[str]) -> Optional[datetime.datetime]:
+    def _parse_date(s: str | None) -> datetime.datetime | None:
         return datetime.datetime.fromisoformat(s) if s else None
 
     @classmethod
-    def from_dynamo_response(cls, response: Any) -> Optional[_TaskRecord]:
+    def from_dynamo_response(cls, response: Any) -> _TaskRecord | None:
         if "Item" not in response:
             return None
 
         return cls.from_dynamo_item(response["Item"])
 
     @classmethod
-    def from_dynamo_item(cls, record: Dict[str, Any]) -> _TaskRecord:
+    def from_dynamo_item(cls, record: dict[str, Any]) -> _TaskRecord:
         return cls(
             execute_after=cls._parse_date(record.get("execute_after")),
             locked_until=cls._parse_date(record.get("locked_until")),
@@ -90,20 +88,14 @@ class DynamoDBRepository(Repository):
         self,
         utc_now: datetime.datetime,
         task: Task,
-        continuation_token: Optional[ContinuationToken] = None,
+        continuation_token: ContinuationToken | None = None,
     ) -> QueryResponse:
-
         response = await self._table.query(
             IndexName="ready_at",
             Select="ALL_ATTRIBUTES",
             Limit=self._batch_size,
-            KeyConditionExpression=Key("partition_id").eq(self._get_partition_id(task))
-            & Key("ready_at").lt(f"{utc_now.isoformat()}`"),
-            **(
-                {"ExclusiveStartKey": continuation_token}
-                if continuation_token is not None
-                else {}
-            ),
+            KeyConditionExpression=Key("partition_id").eq(self._get_partition_id(task)) & Key("ready_at").lt(f"{utc_now.isoformat()}`"),
+            **({"ExclusiveStartKey": continuation_token} if continuation_token is not None else {}),
         )
 
         return QueryResponse(
@@ -149,9 +141,7 @@ class DynamoDBRepository(Repository):
         else:
             return f"{prefix}:{task.canonical_name}"
 
-    async def _retreive_item(
-        self, task: Task, consistent_read: bool = False
-    ) -> Optional[_TaskRecord]:
+    async def _retreive_item(self, task: Task, consistent_read: bool = False) -> _TaskRecord | None:
         result = _TaskRecord.from_dynamo_response(
             await self._table.get_item(
                 Key={
@@ -172,19 +162,13 @@ class DynamoDBRepository(Repository):
                         "partition_id": self._get_partition_id(task),
                         "task_id": task.canonical_name,
                     },
-                    ConditionExpression=(
-                        Attr("version").not_exists() | Attr("version").eq(0)
-                    )
+                    ConditionExpression=(Attr("version").not_exists() | Attr("version").eq(0))
                     if current_version == 0
                     else Attr("version").eq(current_version),
                 )
                 task._last_lease = None  # type: ignore
             else:
-                ready_at = (
-                    max(record.execute_after, record.locked_until)
-                    if record.locked_until is not None
-                    else record.execute_after
-                )
+                ready_at = max(record.execute_after, record.locked_until) if record.locked_until is not None else record.execute_after
                 await self._table.update_item(
                     Key={
                         "partition_id": self._get_partition_id(task),
@@ -198,20 +182,14 @@ class DynamoDBRepository(Repository):
                         version=:version
                     """,
                     ExpressionAttributeValues={
-                        ":execute_after": record.execute_after.isoformat()
-                        if record.execute_after is not None
-                        else "",
-                        ":locked_until": record.locked_until.isoformat()
-                        if record.locked_until is not None
-                        else "",
+                        ":execute_after": record.execute_after.isoformat() if record.execute_after is not None else "",
+                        ":locked_until": record.locked_until.isoformat() if record.locked_until is not None else "",
                         ":locked_by": record.locked_by,
                         # Add a suffix to ready_at to guarantee uniqueness of the secondary index
                         ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
                         ":version": current_version + 1,
                     },
-                    ConditionExpression=(
-                        Attr("version").not_exists() | Attr("version").eq(0)
-                    )
+                    ConditionExpression=(Attr("version").not_exists() | Attr("version").eq(0))
                     if current_version == 0
                     else Attr("version").eq(current_version),
                 )
@@ -225,9 +203,7 @@ class DynamoDBRepository(Repository):
         else:
             return True
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Lease | None = None) -> PollResponse:
         last_lease = getattr(task, "_last_lease", None)
 
         # Similar logic as in Redis repository. If we have previously processed this
@@ -238,7 +214,7 @@ class DynamoDBRepository(Repository):
         # However, in case the task would be PENDING or LOCKED, this will result in no requests
         # being made to the DB at all. For pending this is OK, but for locked, we want to revalidate
         # in order to be able to execute the task as soon as it is unlocked.
-        record: Optional[_TaskRecord]
+        record: _TaskRecord | None
         potentially_stale = False
         if lease is not None:
             assert isinstance(lease, _TaskRecord)
@@ -269,29 +245,17 @@ class DynamoDBRepository(Repository):
             assert record.execute_after is not None
             scheduled_at = record.execute_after
 
-            if (
-                record.locked_until is not None
-                and record.locked_until > utc_now
-                and (lease is None or lease.locked_by != record.locked_by)
-            ):
+            if record.locked_until is not None and record.locked_until > utc_now and (lease is None or lease.locked_by != record.locked_by):
                 result = ResultType.LOCKED
                 if potentially_stale:
                     must_revalidate = True
-            elif (
-                record.execute_after <= utc_now
-                and task.execution_mode == ExecutionMode.AT_MOST_ONCE
-            ):
+            elif record.execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_MOST_ONCE:
                 result = ResultType.READY
-                record.execute_after = task.get_next_execution(
-                    utc_now, record.execute_after
-                )
+                record.execute_after = task.get_next_execution(utc_now, record.execute_after)
                 record.locked_until = None
                 record.locked_by = None
                 update = True
-            elif (
-                record.execute_after <= utc_now
-                and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
-            ):
+            elif record.execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_LEAST_ONCE:
                 result = ResultType.READY
                 record.locked_until = utc_now + task.lease_duration
                 record.locked_by = str(uuid.uuid4())
@@ -299,27 +263,19 @@ class DynamoDBRepository(Repository):
             else:
                 result = ResultType.PENDING
 
-            if must_revalidate or (
-                update and not await self._update_item(task, record)
-            ):
+            if must_revalidate or (update and not await self._update_item(task, record)):
                 logger.debug("Using cached values for last lease")
                 record = await self._retreive_item(task, consistent_read=True)
                 potentially_stale = False
                 continue
 
-            return PollResponse(
-                result=result, scheduled_at=scheduled_at, lease=Lease(record)
-            )
+            return PollResponse(result=result, scheduled_at=scheduled_at, lease=Lease(record))
 
-        raise PyncetteException(
-            "Unable to acquire the lock on the task due to contention"
-        )
+        raise PyncetteException("Unable to acquire the lock on the task due to contention")
 
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         assert isinstance(lease, _TaskRecord)
-        record: Optional[_TaskRecord] = cast(_TaskRecord, copy.copy(lease))
+        record: _TaskRecord | None = cast(_TaskRecord, copy.copy(lease))
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
             if not record:
@@ -340,15 +296,11 @@ class DynamoDBRepository(Repository):
             # If the update fails due to version mismatch
             record = await self._retreive_item(task, consistent_read=True)
 
-        raise PyncetteException(
-            "Unable to acquire the lock on the task due to contention"
-        )
+        raise PyncetteException("Unable to acquire the lock on the task due to contention")
 
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         assert isinstance(lease, _TaskRecord)
-        record: Optional[_TaskRecord] = cast(_TaskRecord, copy.copy(lease))
+        record: _TaskRecord | None = cast(_TaskRecord, copy.copy(lease))
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
             if not record:
@@ -368,15 +320,11 @@ class DynamoDBRepository(Repository):
             # If the update fails due to version mismatch
             record = await self._retreive_item(task, consistent_read=True)
 
-        raise PyncetteException(
-            "Unable to acquire the lock on the task due to contention"
-        )
+        raise PyncetteException("Unable to acquire the lock on the task due to contention")
 
-    async def extend_lease(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> Optional[Lease]:
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Lease | None:
         assert isinstance(lease, _TaskRecord)
-        record: Optional[_TaskRecord] = cast(_TaskRecord, copy.copy(lease))
+        record: _TaskRecord | None = cast(_TaskRecord, copy.copy(lease))
 
         for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
             if not record:
@@ -395,9 +343,7 @@ class DynamoDBRepository(Repository):
             # If the update fails due to version mismatch
             record = await self._retreive_item(task, consistent_read=True)
 
-        raise PyncetteException(
-            "Unable to acquire the lock on the task due to contention"
-        )
+        raise PyncetteException("Unable to acquire the lock on the task due to contention")
 
     async def initialize(self) -> None:
         self._table = await self._dynamo_resource.Table(self._table_name)
@@ -441,8 +387,9 @@ class DynamoDBRepository(Repository):
 
 @contextlib.asynccontextmanager
 async def dynamodb_repository(
-    dynamodb_endpoint: Optional[str] = None,
-    dynamodb_region_name: Optional[str] = None,
+    *,
+    dynamodb_endpoint: str | None = None,
+    dynamodb_region_name: str | None = None,
     dynamodb_skip_table_create: bool = False,
     dynamodb_partition_prefix: str = "",
     **kwargs: Any,

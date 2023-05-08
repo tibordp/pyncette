@@ -2,7 +2,7 @@
 Usage
 =====
 
-The core unit of execution in Pyncette is a :class:`~pyncette.Task`. Each task is a Python coroutine that specifies what needs to be executed. 
+The core unit of execution in Pyncette is a :class:`~pyncette.Task`. Each task is a Python coroutine that specifies what needs to be executed.
 
 .. code-block:: py
 
@@ -27,11 +27,11 @@ If Pyncette is run alongside other code or for customization, :meth:`~pyncette.P
 
     import asyncio
     from pyncette import Pyncette
-    
+
     app = Pyncette()
 
     ...
-    
+
     async with app.create() as app_context:
         await app_context.run()
 
@@ -109,15 +109,15 @@ Pyncette is timezone-aware, the timezone for a task can be specified by ``timezo
 
     from pyncette import ExecutionMode
 
-    @app.task(schedule="0 12 * * *", timezone="Europe/Dublin") 
+    @app.task(schedule="0 12 * * *", timezone="Europe/Dublin")
     async def task1(context: Context):
         print(f"Hello from Dublin!")
 
-    @app.task(schedule="0 12 * * *", timezone="UTC+12") 
+    @app.task(schedule="0 12 * * *", timezone="UTC+12")
     async def task2(context: Context):
         print(f"Hello from Камча́тка!")
 
-The accepted values are all that :meth:`dateutil.tz.gettz` accepts. 
+The accepted values are all that :meth:`dateutil.tz.gettz` accepts.
 
 .. _disable-task:
 
@@ -129,7 +129,7 @@ to conditionally enable tasks only on certain instances.
 
 .. code-block:: python
 
-    @app.task(schedule="* * * * *", enabled=False) 
+    @app.task(schedule="* * * * *", enabled=False)
     async def task1(context: Context):
         print(f"This will never run.")
 
@@ -142,7 +142,7 @@ Tasks can be disabled also in the initialization code:
 
     app = Pyncette()
 
-    @app.task(schedule="* * * * *") 
+    @app.task(schedule="* * * * *")
     async def task1(context: Context):
         print(f"This will never run.")
 
@@ -161,7 +161,7 @@ The :meth:`~pyncette.Pyncette.task` decorator accepts an arbitrary number of add
     from pyncette import ExecutionMode
 
     # If we use multiple decorators on the same coroutine, we must explicitely provide the name
-    @app.task(name="task1", interval=datetime.timedelta(seconds=10), username="abra") 
+    @app.task(name="task1", interval=datetime.timedelta(seconds=10), username="abra")
     @app.task(name="task2", interval=datetime.timedelta(seconds=20), username="kadabra")
     @app.task(name="task3", interval=datetime.timedelta(seconds=30), username="alakazam")
     async def task(context: Context):
@@ -179,7 +179,7 @@ If you have common logic that should execute around every task invocation, middl
 .. code-block:: py
 
     app = Pyncette()
-    
+
     @app.middleware
     async def retry(context: Context, next: Callable[[], Awaitable[None]]):
         # Example only, prefer to rely on Pyncette to drive task retry logic
@@ -198,7 +198,7 @@ If you have common logic that should execute around every task invocation, middl
             await next()
         except Exception as e:
             logger.error(f"Task {context.task.name} failed", e)
-            raise        
+            raise
 
     @app.middleware
     async def db_transaction(context: Context, next: Callable[[], Awaitable[None]]):
@@ -207,7 +207,7 @@ If you have common logic that should execute around every task invocation, middl
             await next()
         except Exception:
             context.db.rollback()
-            raise            
+            raise
         else:
             context.db.commit()
 
@@ -302,9 +302,9 @@ Pyncette supports a use case where the tasks are not necessarily known in advanc
         )
         await app_context.run()
 
-When persistence is used, the schedules and task parameters of the are persisted alongside the execution data, which allows the tasks to be registered and unregistered at will. 
+When persistence is used, the schedules and task parameters of the are persisted alongside the execution data, which allows the tasks to be registered and unregistered at will.
 
-An example use case is a web application where every user can have something happen at their chosen schedule. Polling is efficient, since the concrete instances of the dynamic class are only loaded from the storage if the are already due, instead of being polled all the time. 
+An example use case is a web application where every user can have something happen at their chosen schedule. Polling is efficient, since the concrete instances of the dynamic class are only loaded from the storage if the are already due, instead of being polled all the time.
 
 The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule_task`
 
@@ -322,8 +322,8 @@ The task instances can be removed by :meth:`~pyncette.PyncetteContext.unschedule
     If the number of dynamic tasks is large, it is a good idea to limit the batch size::
 
         app = Pyncette(
-            repository_factory=redis_repository, 
-            redis_url='redis://localhost', 
+            repository_factory=redis_repository,
+            redis_url='redis://localhost',
             batch_size=10
         )
 
@@ -343,7 +343,7 @@ Dynamic tasks can also be scheduled to execute only once at a specific date.
     async with app.create() as app_context:
         await app_context.schedule_task(task, "y2k38", execute_at=datetime(2038, 1, 19, 3, 14, 7));
         await app_context.schedule_task(task, "tomorrow", execute_at=datetime.now() + timedelta(days=1));
-        
+
         # This will execute once immediately, since it is already overdue
         await app_context.schedule_task(task, "overdue", execute_at=datetime.now() - timedelta(days=1));
         await app_context.run()

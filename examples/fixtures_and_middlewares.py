@@ -13,6 +13,7 @@ service clients to the task context.
 
 import asyncio
 import logging
+import pathlib
 import random
 import time
 from typing import AsyncIterator
@@ -32,7 +33,7 @@ app = Pyncette()
 async def logfile_fixture(app_context: PyncetteContext) -> AsyncIterator[TextIO]:
     logger.info("Using log file logfile.txt")
 
-    with open("./logfile.txt", "a") as f:
+    with pathlib.Path("./logfile.txt").open("a") as f:
         # Yielding from fixture gives an object that will be available in
         # context.<fixture name> for all tasks (and middlewares)
         yield f

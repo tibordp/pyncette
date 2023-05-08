@@ -1,34 +1,24 @@
 #!/usr/bin/env python
-# -*- encoding: utf-8 -*-
-from __future__ import absolute_import
-from __future__ import print_function
 
-import io
 import itertools
 import re
-from glob import glob
-from os.path import basename
-from os.path import dirname
-from os.path import join
-from os.path import splitext
+from pathlib import Path
 
 from setuptools import find_packages
 from setuptools import setup
 
 
 def read(*names, **kwargs):
-    with io.open(
-        join(dirname(__file__), *names), encoding=kwargs.get("encoding", "utf8")
-    ) as fh:
+    with Path(__file__).parent.joinpath(*names).open(encoding=kwargs.get("encoding", "utf8")) as fh:
         return fh.read()
 
 
 extras = {
-    "redis": ["aioredis>=2.0.0"],
-    "prometheus": ["prometheus_client>=0.11.0"],
-    "postgres": ["asyncpg>=0.24.0"],
-    "dynamodb": ["aioboto3>=9.2.2"],
-    "mysql": ["aiomysql>=0.0.21", "cryptography>=3.4.7"],
+    "redis": ["redis>=4.5.4"],
+    "prometheus": ["prometheus_client>=0.16.0"],
+    "postgres": ["asyncpg>=0.27.0"],
+    "dynamodb": ["aioboto3>=11.1.0"],
+    "mysql": ["aiomysql>=0.1.1", "cryptography>=40.0.2"],
     "uvloop": ["uvloop>=0.16.0"],
 }
 
@@ -37,11 +27,8 @@ setup(
     version="0.9.0",
     license="MIT",
     description="A reliable distributed scheduler with pluggable storage backends",
-    long_description="%s\n%s"
-    % (
-        re.compile("^.. start-badges.*^.. end-badges", re.M | re.S).sub(
-            "", read("README.rst")
-        ),
+    long_description="{}\n{}".format(
+        re.compile("^.. start-badges.*^.. end-badges", re.M | re.S).sub("", read("README.rst")),
         re.sub(":[a-z]+:`~?(.*?)`", r"``\1``", read("CHANGELOG.rst")),
     ),
     author="Tibor Djurica Potpara",
@@ -50,7 +37,7 @@ setup(
     package_data={"pyncette": ["py.typed"]},
     packages=find_packages("src"),
     package_dir={"": "src"},
-    py_modules=[splitext(basename(path))[0] for path in glob("src/*.py")],
+    py_modules=[path.stem for path in Path("src").glob("*.py")],
     include_package_data=True,
     zip_safe=False,
     classifiers=[
@@ -62,10 +49,10 @@ setup(
         "Operating System :: POSIX",
         "Operating System :: Microsoft :: Windows",
         "Programming Language :: Python",
-        "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
         "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
         "Programming Language :: Python :: Implementation :: CPython",
         "Topic :: Utilities",
     ],
@@ -77,12 +64,11 @@ setup(
     keywords=[
         # eg: 'keyword1', 'keyword2', 'keyword3',
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.8",
     install_requires=[
-        "typing-extensions>=3.7.4.2",
-        "croniter>=1.0.15",
-        "aiosqlite>=0.17.0",
-        "aiohttp>=3.7.4",
+        "croniter>=1.3.14",
+        "aiosqlite>=0.19.0",
+        "aiohttp>=3.8.4",
         "python-dateutil>=2.8.2",
         "coloredlogs",
     ],

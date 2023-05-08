@@ -7,7 +7,6 @@ from contextlib import asynccontextmanager
 
 import dateutil.tz
 import pytest
-from utils.timemachine import TimeMachine
 
 import pyncette
 from pyncette.dynamodb import dynamodb_repository
@@ -15,13 +14,12 @@ from pyncette.mysql import mysql_repository
 from pyncette.postgres import postgres_repository
 from pyncette.redis import redis_repository
 from pyncette.sqlite import sqlite_repository
+from utils.timemachine import TimeMachine
 
 
 @pytest.fixture
 def timemachine(monkeypatch):
-    timemachine = TimeMachine(
-        datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC)
-    )
+    timemachine = TimeMachine(datetime.datetime(2019, 1, 1, 0, 0, 0, tzinfo=dateutil.tz.UTC))
     monkeypatch.setattr(pyncette.pyncette, "_current_time", timemachine.utcnow)
     monkeypatch.setattr(asyncio, "sleep", timemachine.sleep)
     monkeypatch.setattr(asyncio, "wait_for", timemachine.wait_for)
@@ -39,9 +37,7 @@ def wrap_factory(factory, timemachine):
 
 
 def random_table_name():
-    return "pyncette_{}".format(
-        "".join([chr(random.randint(ord("a"), ord("z"))) for _ in range(10)])
-    )
+    return "pyncette_{}".format("".join([chr(random.randint(ord("a"), ord("z"))) for _ in range(10)]))
 
 
 # Define new configurations here
@@ -55,9 +51,7 @@ class PostgresBackend:
         return {
             "repository_factory": wrap_factory(postgres_repository, timemachine),
             "postgres_table_name": random_table_name(),
-            "postgres_url": os.environ.get(
-                "POSTGRES_URL", "postgres://postgres@localhost/pyncette"
-            ),
+            "postgres_url": os.environ.get("POSTGRES_URL", "postgres://postgres:postgres@localhost/pyncette"),
         }
 
 
@@ -95,9 +89,7 @@ class DynamoDBBackend:
             "repository_factory": wrap_factory(dynamodb_repository, timemachine),
             "dynamodb_table_name": random_table_name(),
             "dynamodb_region_name": "eu-west-1",
-            "dynamodb_endpoint": os.environ.get(
-                "DYNAMODB_ENDPOINT", "http://localhost:4566"
-            ),
+            "dynamodb_endpoint": os.environ.get("DYNAMODB_ENDPOINT", "http://localhost:4566"),
         }
 
 
@@ -147,10 +139,5 @@ def pytest_generate_tests(metafunc):
     if "backend" in metafunc.fixturenames:
         metafunc.parametrize(
             "backend",
-            [
-                repository
-                for repository in all_backends
-                if repository.__name__ in metafunc.config.getoption("backend")
-            ]
-            or all_backends,
+            [repository for repository in all_backends if repository.__name__ in metafunc.config.getoption("backend")] or all_backends,
         )

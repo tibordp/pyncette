@@ -70,11 +70,9 @@ async def execute_once(context: Context) -> None:
 
 @app.task(interval=datetime.timedelta(seconds=1))
 async def schedule_execute_once(context: Context) -> None:
-    await context.app_context.schedule_task(
-        execute_once, str(uuid.uuid4()), interval=datetime.timedelta(seconds=1)
-    )
+    await context.app_context.schedule_task(execute_once, str(uuid.uuid4()), interval=datetime.timedelta(seconds=1))
 
 
 if __name__ == "__main__":
-    start_http_server(port=9699, addr="0.0.0.0")
+    start_http_server(port=9699, addr="0.0.0.0")  # noqa: S104
     app.main()

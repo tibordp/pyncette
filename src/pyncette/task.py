@@ -6,9 +6,6 @@ import json
 import logging
 from typing import Any
 from typing import Awaitable
-from typing import Dict
-from typing import List
-from typing import Optional
 
 import dateutil.tz
 from croniter import croniter
@@ -27,29 +24,30 @@ class Task:
 
     name: str
     task_func: TaskFunc
-    schedule: Optional[str]
-    interval: Optional[datetime.timedelta]
-    execute_at: Optional[datetime.datetime]
-    timezone: Optional[str]
+    schedule: str | None
+    interval: datetime.timedelta | None
+    execute_at: datetime.datetime | None
+    timezone: str | None
     fast_forward: bool
     failure_mode: FailureMode
     execution_mode: ExecutionMode
     lease_duration: datetime.timedelta
-    parent_task: Optional["Task"]
-    extra_args: Dict[str, Any]
+    parent_task: Task | None
+    extra_args: dict[str, Any]
     _enabled: bool
 
     def __init__(
         self,
+        *,
         name: str,
         func: TaskFunc,
         enabled: bool = True,
         dynamic: bool = False,
-        parent_task: "Task" = None,
-        schedule: Optional[str] = None,
-        interval: Optional[datetime.timedelta] = None,
-        execute_at: Optional[datetime.datetime] = None,
-        timezone: Optional[str] = None,
+        parent_task: Task | None = None,
+        schedule: str | None = None,
+        interval: datetime.timedelta | None = None,
+        execute_at: datetime.datetime | None = None,
+        timezone: str | None = None,
         fast_forward: bool = False,
         failure_mode: FailureMode = FailureMode.NONE,
         execution_mode: ExecutionMode = ExecutionMode.AT_LEAST_ONCE,
@@ -76,28 +74,15 @@ class Task:
         self._validate()
 
     def _validate(self) -> None:
-        if (
-            self.execution_mode == ExecutionMode.AT_MOST_ONCE
-            and self.failure_mode != FailureMode.NONE
-        ):
-            raise ValueError(
-                "failure_mode is not applicable when execution_mode is AT_MOST_ONCE"
-            )
+        if self.execution_mode == ExecutionMode.AT_MOST_ONCE and self.failure_mode != FailureMode.NONE:
+            raise ValueError("failure_mode is not applicable when execution_mode is AT_MOST_ONCE")
 
         if not self.dynamic:
-            schedule_specs = [
-                spec
-                for spec in [self.schedule, self.interval, self.execute_at]
-                if spec is not None
-            ]
+            schedule_specs = [spec for spec in [self.schedule, self.interval, self.execute_at] if spec is not None]
             if len(schedule_specs) != 1:
-                raise ValueError(
-                    "Exactly one of the following must be specified: schedule, interval, execute_at"
-                )
+                raise ValueError("Exactly one of the following must be specified: schedule, interval, execute_at")
             if self.schedule is None and self.timezone is not None:
-                raise ValueError(
-                    "Timezone may only be specified when cron schedule is used"
-                )
+                raise ValueError("Timezone may only be specified when cron schedule is used")
             if self.schedule is not None:
                 croniter.expand(self.schedule)
 
@@ -110,19 +95,15 @@ class Task:
         try:
             json.dumps(self.extra_args)
         except Exception as e:
-            raise ValueError(f"Extra parameters must be JSON serializable ({e})")
+            raise ValueError(f"Extra parameters must be JSON serializable ({e})") from None
 
     def get_next_execution(
         self,
         utc_now: datetime.datetime,
-        last_execution: Optional[datetime.datetime],
-    ) -> Optional[datetime.datetime]:
+        last_execution: datetime.datetime | None,
+    ) -> datetime.datetime | None:
         if self.execute_at is not None:
-            return (
-                self.execute_at.astimezone(dateutil.tz.UTC)
-                if last_execution is None
-                else None
-            )
+            return self.execute_at.astimezone(dateutil.tz.UTC) if last_execution is None else None
 
         current_time = last_execution if last_execution is not None else utc_now
 
@@ -137,9 +118,7 @@ class Task:
             if self.timezone:
                 current_time = current_time.astimezone(dateutil.tz.gettz(self.timezone))
 
-            cron = croniter(
-                self.schedule, start_time=current_time, ret_type=datetime.datetime
-            )
+            cron = croniter(self.schedule, start_time=current_time, ret_type=datetime.datetime)
 
             while True:
                 next_execution = cron.get_next()
@@ -148,7 +127,7 @@ class Task:
                 if not self.fast_forward or next_execution >= utc_now:
                     return next_execution.astimezone(dateutil.tz.UTC)
 
-        assert False
+        raise AssertionError
 
     def instantiate(self, name: str, **kwargs: Any) -> Task:
         """Creates a concrete instance of a dynamic task"""
@@ -156,7 +135,7 @@ class Task:
         if not self.dynamic:
             raise ValueError("Cannot instantiate a non-dynamic task")
 
-        extra_args: Dict[str, Any] = {
+        extra_args: dict[str, Any] = {
             "schedule": self.schedule,
             "interval": self.interval,
             "timezone": self.timezone,
@@ -195,33 +174,25 @@ class Task:
         else:
             return self.name.replace(":", "::")
 
-    def as_spec(self) -> Dict[str, Any]:
+    def as_spec(self) -> dict[str, Any]:
         """Serializes all the attributes to task spec"""
         return {
             "name": self.name,
             "schedule": self.schedule,
-            "interval": self.interval.total_seconds()
-            if self.interval is not None
-            else None,
-            "execute_at": self.execute_at.isoformat()
-            if self.execute_at is not None
-            else None,
+            "interval": self.interval.total_seconds() if self.interval is not None else None,
+            "execute_at": self.execute_at.isoformat() if self.execute_at is not None else None,
             "timezone": self.timezone,
             "extra_args": self.extra_args,
         }
 
-    def instantiate_from_spec(self, task_spec: Dict[str, Any]) -> Task:
+    def instantiate_from_spec(self, task_spec: dict[str, Any]) -> Task:
         """Deserializes all the attributes from task spec"""
         return self.instantiate(
             name=task_spec["name"],
             schedule=task_spec["schedule"],
-            interval=datetime.timedelta(seconds=task_spec["interval"])
-            if task_spec["interval"] is not None
-            else None,
+            interval=datetime.timedelta(seconds=task_spec["interval"]) if task_spec["interval"] is not None else None,
             timezone=task_spec["timezone"],
-            execute_at=datetime.datetime.fromisoformat(task_spec["execute_at"])
-            if task_spec["execute_at"] is not None
-            else None,
+            execute_at=datetime.datetime.fromisoformat(task_spec["execute_at"]) if task_spec["execute_at"] is not None else None,
             **task_spec["extra_args"],
         )
 
@@ -233,7 +204,7 @@ class Task:
 
 
 def _default_partition_selector(partition_count: int, task_id: str) -> int:
-    algo = hashlib.sha1()
+    algo = hashlib.sha1()  # noqa: S324
     algo.update(task_id.encode("utf-8"))
     max_value = int.from_bytes(b"\xff" * algo.digest_size, "big") + 1
     digest = int.from_bytes(algo.digest(), "big")
@@ -252,10 +223,7 @@ class _TaskPartition(Task):
 
     @property
     def enabled(self) -> bool:
-        return self._parent.enabled and (
-            self._parent.enabled_partitions is None
-            or self.partition_id in self._parent.enabled_partitions
-        )
+        return self._parent.enabled and (self._parent.enabled_partitions is None or self.partition_id in self._parent.enabled_partitions)
 
     @enabled.setter
     def enabled(self, value: bool) -> None:
@@ -273,13 +241,14 @@ class PartitionedTask(Task):
     _kwargs: Any
     partition_count: int
     partition_selector: PartitionSelector
-    enabled_partitions: Optional[List[int]]
+    enabled_partitions: list[int] | None
 
     def __init__(
         self,
+        *,
         partition_count: int,
         partition_selector: PartitionSelector = _default_partition_selector,
-        enabled_partitions: Optional[List[int]] = None,
+        enabled_partitions: list[int] | None = None,
         **kwargs: Any,
     ):
         if partition_count < 1:
@@ -292,11 +261,8 @@ class PartitionedTask(Task):
         self.enabled_partitions = enabled_partitions
         self._kwargs = kwargs
 
-    def get_partitions(self) -> List[Task]:
-        return [
-            _TaskPartition(self, partition_id=partition_id, **self._kwargs)
-            for partition_id in range(self.partition_count)
-        ]
+    def get_partitions(self) -> list[Task]:
+        return [_TaskPartition(self, partition_id=partition_id, **self._kwargs) for partition_id in range(self.partition_count)]
 
     def instantiate(self, name: str, **kwargs: Any) -> Task:
         """Creates a concrete instance of a dynamic task"""

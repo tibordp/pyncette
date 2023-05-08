@@ -3,7 +3,6 @@ import datetime
 from unittest.mock import MagicMock
 
 import pytest
-from conftest import DefaultBackend
 from croniter.croniter import CroniterBadCronError
 
 from pyncette import Context
@@ -14,6 +13,8 @@ from pyncette import PyncetteContext
 from pyncette.errors import LeaseLostException
 from pyncette.task import _default_partition_selector
 from pyncette.utils import with_heartbeat
+
+from conftest import DefaultBackend
 
 
 def test_invalid_configuration():
@@ -27,7 +28,7 @@ def test_invalid_configuration():
 
     with pytest.raises(ValueError):
         app = Pyncette()
-        app.task(execute_at=datetime.datetime.utcnow())(dummy)
+        app.task(execute_at=datetime.datetime.now(tz=datetime.timezone.utc))(dummy)
 
     with pytest.raises(ValueError):
         app = Pyncette()
@@ -47,21 +48,15 @@ def test_invalid_configuration():
         match="failure_mode is not applicable when execution_mode is AT_MOST_ONCE",
     ):
         app = Pyncette()
-        app.task(
-            execution_mode=ExecutionMode.AT_MOST_ONCE, failure_mode=FailureMode.UNLOCK
-        )(dummy)
+        app.task(execution_mode=ExecutionMode.AT_MOST_ONCE, failure_mode=FailureMode.UNLOCK)(dummy)
 
-    with pytest.raises(
-        ValueError, match="Invalid timezone specifier 'Gondwana/Atlantis'."
-    ):
+    with pytest.raises(ValueError, match="Invalid timezone specifier 'Gondwana/Atlantis'."):
         app = Pyncette()
         app.task(schedule="* * * * *", timezone="Gondwana/Atlantis")(dummy)
 
     with pytest.raises(ValueError):
         app = Pyncette()
-        app.task(interval=datetime.timedelta(seconds=2), timezone="Europe/Dublin")(
-            dummy
-        )
+        app.task(interval=datetime.timedelta(seconds=2), timezone="Europe/Dublin")(dummy)
 
     with pytest.raises(ValueError, match="Extra parameters must be JSON serializable"):
         app = Pyncette()
@@ -221,9 +216,7 @@ async def test_add_to_context_invalid_name():
 def test_partition_count_invalid():
     app = Pyncette()
 
-    with pytest.raises(
-        ValueError, match="Partition count must be greater than or equal to 1"
-    ):
+    with pytest.raises(ValueError, match="Partition count must be greater than or equal to 1"):
 
         @app.partitioned_task(partition_count=0)
         async def hello(context: Context) -> None:
@@ -235,7 +228,4 @@ def test_default_partition_selector_does_not_change():
     # This is a regression test that ensures that the default
     # partition key is not changed, as that could lead to all users'
     # partitions being remapped.
-    assert (
-        _default_partition_selector(1000000000000, "Lorem ipsum dolor sit amet")
-        == 222413034928
-    )
+    assert _default_partition_selector(1000000000000, "Lorem ipsum dolor sit amet") == 222413034928

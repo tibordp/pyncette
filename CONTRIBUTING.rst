@@ -46,7 +46,7 @@ To set up `pyncette` for local development:
 3. Create a branch for local development::
 
     git checkout -b name-of-your-bugfix-or-feature
-   
+
    Now you can make your changes locally.
 
 4. Running integration tests assumes that there will be Redis, PostgreSQL, MySQL and Localstack (for DynamoDB) running on localhost. Alternatively, there is a Docker Compose environment that will set up all the backends so that integration tests can run seamlessly::
@@ -54,13 +54,13 @@ To set up `pyncette` for local development:
     docker-compose up -d
     docker-compose run --rm shell
 
-5. When you're done making changes run all the checks and docs builder with `tox <https://tox.readthedocs.io/en/latest/install.html>`_ one command::
+5. When you're done making changes run all the checks and docs builder with `tox <https://tox.wiki/en/latest/installation.html>`_ one command::
 
     tox
 
 6. Pyncette uses `black` and `isort` to enforce formatting and import ordering. If you want to auto-format the code, you can do it like this::
 
-    tox -e fmt
+    tox -e check
 
 7. Commit your changes and push your branch to GitHub::
 
@@ -91,7 +91,7 @@ To run a subset of tests::
 
     tox -e envname -- pytest -k test_myfeature
 
-To run all the test environments in *parallel* (see 
-[tox documentation](https://tox.readthedocs.io/en/latest/example/basic.html#parallel-mode))::
+To run all the test environments in *parallel* (see
+[tox documentation](https://tox.wiki/en/latest/user_guide.html#parallel-mode))::
 
     tox --parallel auto

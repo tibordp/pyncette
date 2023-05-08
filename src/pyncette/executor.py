@@ -5,15 +5,12 @@ import contextlib
 import logging
 from typing import Any
 from typing import Awaitable
-from typing import Dict
-from typing import Optional
-from typing import Type
 
 logger = logging.getLogger(__name__)
 
 
 class SynchronousExecutor(contextlib.AbstractAsyncContextManager):
-    def __init__(self, **kwargs: Dict[str, Any]):
+    def __init__(self, **kwargs: dict[str, Any]):
         pass
 
     async def __aenter__(self) -> SynchronousExecutor:
@@ -21,9 +18,9 @@ class SynchronousExecutor(contextlib.AbstractAsyncContextManager):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[Any],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any | None,
     ) -> None:
         pass
 
@@ -34,11 +31,11 @@ class SynchronousExecutor(contextlib.AbstractAsyncContextManager):
 class DefaultExecutor(contextlib.AbstractAsyncContextManager):
     """Manages the spawned tasks running in background"""
 
-    _tasks: Dict[object, asyncio.Task]
+    _tasks: dict[object, asyncio.Task]
     _semaphore: asyncio.Semaphore
 
     def __init__(self, **kwargs: Any) -> None:
-        self._tasks = dict()
+        self._tasks = {}
         concurrency_limit = kwargs.get("concurrency_limit", 100)
         self._semaphore = asyncio.Semaphore(concurrency_limit)
 
@@ -47,9 +44,9 @@ class DefaultExecutor(contextlib.AbstractAsyncContextManager):
 
     async def __aexit__(
         self,
-        exc_type: Optional[Type[BaseException]],
-        exc_value: Optional[BaseException],
-        traceback: Optional[Any],
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: Any | None,
     ) -> None:
         if self._tasks:
             logging.debug(f"{exc_type}, {exc_value}, {traceback}")

@@ -40,9 +40,7 @@ async def test_successful_task_interval(timemachine, backend):
 
 @pytest.mark.asyncio
 async def test_successful_task_cronspec(timemachine, backend):
-    app = Pyncette(
-        **backend.get_args(timemachine), poll_interval=datetime.timedelta(seconds=30)
-    )
+    app = Pyncette(**backend.get_args(timemachine), poll_interval=datetime.timedelta(seconds=30))
 
     counter = MagicMock()
 
@@ -108,9 +106,7 @@ async def test_unlock_lease_expires(timemachine, backend):
 
 
 @pytest.mark.asyncio
-async def test_failed_task_retried_after_lease_over_if_failure_mode_none(
-    timemachine, backend
-):
+async def test_failed_task_retried_after_lease_over_if_failure_mode_none(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
@@ -288,27 +284,15 @@ async def test_context_scheduled_at(timemachine, backend):
         await timemachine.unwind()
 
     assert counter.offset.call_count == 5
-    counter.offset.assert_any_call(
-        datetime.datetime(2019, 1, 1, 0, 0, 2, tzinfo=dateutil.tz.UTC)
-    )
-    counter.offset.assert_any_call(
-        datetime.datetime(2019, 1, 1, 0, 0, 4, tzinfo=dateutil.tz.UTC)
-    )
-    counter.offset.assert_any_call(
-        datetime.datetime(2019, 1, 1, 0, 0, 6, tzinfo=dateutil.tz.UTC)
-    )
-    counter.offset.assert_any_call(
-        datetime.datetime(2019, 1, 1, 0, 0, 8, tzinfo=dateutil.tz.UTC)
-    )
-    counter.offset.assert_any_call(
-        datetime.datetime(2019, 1, 1, 0, 0, 10, tzinfo=dateutil.tz.UTC)
-    )
+    counter.offset.assert_any_call(datetime.datetime(2019, 1, 1, 0, 0, 2, tzinfo=dateutil.tz.UTC))
+    counter.offset.assert_any_call(datetime.datetime(2019, 1, 1, 0, 0, 4, tzinfo=dateutil.tz.UTC))
+    counter.offset.assert_any_call(datetime.datetime(2019, 1, 1, 0, 0, 6, tzinfo=dateutil.tz.UTC))
+    counter.offset.assert_any_call(datetime.datetime(2019, 1, 1, 0, 0, 8, tzinfo=dateutil.tz.UTC))
+    counter.offset.assert_any_call(datetime.datetime(2019, 1, 1, 0, 0, 10, tzinfo=dateutil.tz.UTC))
 
 
 @pytest.mark.asyncio
-async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(
-    timemachine, backend
-):
+async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
@@ -357,9 +341,7 @@ async def test_fast_forward_cronspec(timemachine, backend):
 
 
 @pytest.mark.asyncio
-async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used_cronspec(
-    timemachine, backend
-):
+async def test_does_not_catch_up_with_stale_executions_if_fast_forward_used_cronspec(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine))
 
     counter = MagicMock()
@@ -458,9 +440,7 @@ async def test_multi_task(timemachine, backend):
 
 @pytest.mark.asyncio
 async def test_timezone_support(timemachine, backend):
-    app = Pyncette(
-        **backend.get_args(timemachine), poll_interval=datetime.timedelta(hours=1)
-    )
+    app = Pyncette(**backend.get_args(timemachine), poll_interval=datetime.timedelta(hours=1))
 
     counter = MagicMock()
 
@@ -591,7 +571,7 @@ async def test_middlewares(timemachine, backend):
 
     @app.task(interval=datetime.timedelta(seconds=2))
     async def task2(context: Context) -> None:
-        raise Exception()
+        raise Exception
 
     @app.middleware
     async def switch1(context: Context, next: Callable[[], Awaitable[None]]):
@@ -697,9 +677,7 @@ async def test_dynamic_successful_task_interval_small_batch_size(timemachine, ba
 
 
 @pytest.mark.asyncio
-async def test_dynamic_successful_task_interval_invalid_batch_size(
-    timemachine, backend
-):
+async def test_dynamic_successful_task_interval_invalid_batch_size(timemachine, backend):
     app = Pyncette(**backend.get_args(timemachine), batch_size=0)
     with pytest.raises(ValueError):
         async with app.create():
@@ -719,15 +697,9 @@ async def test_dynamic_successful_task_interval_extra_args(timemachine, backend)
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
         await asyncio.gather(
-            ctx.schedule_task(
-                hello, "1", interval=datetime.timedelta(seconds=2), username="bill"
-            ),
-            ctx.schedule_task(
-                hello, "2", interval=datetime.timedelta(seconds=2), username="steve"
-            ),
-            ctx.schedule_task(
-                hello, "3", interval=datetime.timedelta(seconds=2), username="tibor"
-            ),
+            ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=2), username="bill"),
+            ctx.schedule_task(hello, "2", interval=datetime.timedelta(seconds=2), username="steve"),
+            ctx.schedule_task(hello, "3", interval=datetime.timedelta(seconds=2), username="tibor"),
         )
         await timemachine.step(datetime.timedelta(seconds=10))
         await asyncio.gather(
@@ -740,9 +712,7 @@ async def test_dynamic_successful_task_interval_extra_args(timemachine, backend)
         await task
         await timemachine.unwind()
 
-    counter.execute.assert_has_calls(
-        [call("bill"), call("steve"), call("tibor")], any_order=True
-    )
+    counter.execute.assert_has_calls([call("bill"), call("steve"), call("tibor")], any_order=True)
 
 
 @pytest.mark.asyncio
@@ -823,9 +793,7 @@ async def test_dynamic_poll_after_unregister(timemachine, backend):
         counter.execute()  # pragma: no cover
 
     async with app.create() as ctx:
-        task_instance = await ctx.schedule_task(
-            hello, "1", interval=datetime.timedelta(seconds=1)
-        )
+        task_instance = await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=1))
         await ctx.unschedule_task(hello, "1")
 
         with pytest.raises(PyncetteException, match="not found"):
@@ -955,12 +923,8 @@ async def test_dynamic_default_args(timemachine, backend):
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
-        await ctx.schedule_task(
-            hello1, "1", interval=datetime.timedelta(seconds=1), username="rajeev"
-        )
-        await ctx.schedule_task(
-            hello1, "2", interval=datetime.timedelta(seconds=1), username="jeethu"
-        )
+        await ctx.schedule_task(hello1, "1", interval=datetime.timedelta(seconds=1), username="rajeev")
+        await ctx.schedule_task(hello1, "2", interval=datetime.timedelta(seconds=1), username="jeethu")
         await ctx.schedule_task(hello1, "3", interval=datetime.timedelta(seconds=1))
         await ctx.schedule_task(hello2, "4", username="imaana")
         await ctx.schedule_task(hello3, "5", username="laibuta")
@@ -969,9 +933,7 @@ async def test_dynamic_default_args(timemachine, backend):
         await task
         await timemachine.unwind()
 
-    counter.task1.execute.assert_has_calls(
-        [call("rajeev"), call("jeethu"), call("default")], any_order=True
-    )
+    counter.task1.execute.assert_has_calls([call("rajeev"), call("jeethu"), call("default")], any_order=True)
     counter.task2.execute.assert_has_calls([call("imaana")], any_order=True)
     counter.task3.execute.assert_has_calls([call("laibuta")], any_order=True)
 
@@ -989,15 +951,9 @@ async def test_execute_at(timemachine, backend):
     now = timemachine.utcnow()
     async with app.create() as ctx:
         await asyncio.gather(
-            ctx.schedule_task(
-                hello, "1", execute_at=now + datetime.timedelta(seconds=1)
-            ),
-            ctx.schedule_task(
-                hello, "2", execute_at=now + datetime.timedelta(seconds=2)
-            ),
-            ctx.schedule_task(
-                hello, "3", execute_at=now + datetime.timedelta(seconds=3)
-            ),
+            ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=1)),
+            ctx.schedule_task(hello, "2", execute_at=now + datetime.timedelta(seconds=2)),
+            ctx.schedule_task(hello, "3", execute_at=now + datetime.timedelta(seconds=3)),
         )
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
@@ -1022,15 +978,9 @@ async def test_execute_at_retry(timemachine, backend):
     now = timemachine.utcnow()
     async with app.create() as ctx:
         await asyncio.gather(
-            ctx.schedule_task(
-                hello, "task1", execute_at=now + datetime.timedelta(seconds=1)
-            ),
-            ctx.schedule_task(
-                hello, "task2", execute_at=now + datetime.timedelta(seconds=2)
-            ),
-            ctx.schedule_task(
-                hello, "task3", execute_at=now + datetime.timedelta(seconds=3)
-            ),
+            ctx.schedule_task(hello, "task1", execute_at=now + datetime.timedelta(seconds=1)),
+            ctx.schedule_task(hello, "task2", execute_at=now + datetime.timedelta(seconds=2)),
+            ctx.schedule_task(hello, "task3", execute_at=now + datetime.timedelta(seconds=3)),
         )
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=5))
@@ -1056,15 +1006,9 @@ async def test_execute_at_at_most_once(timemachine, backend):
     now = timemachine.utcnow()
     async with app.create() as ctx:
         await asyncio.gather(
-            ctx.schedule_task(
-                hello, "1", execute_at=now + datetime.timedelta(seconds=1)
-            ),
-            ctx.schedule_task(
-                hello, "2", execute_at=now + datetime.timedelta(seconds=2)
-            ),
-            ctx.schedule_task(
-                hello, "3", execute_at=now + datetime.timedelta(seconds=3)
-            ),
+            ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=1)),
+            ctx.schedule_task(hello, "2", execute_at=now + datetime.timedelta(seconds=2)),
+            ctx.schedule_task(hello, "3", execute_at=now + datetime.timedelta(seconds=3)),
         )
         task = asyncio.create_task(ctx.run())
         await timemachine.step(datetime.timedelta(seconds=10))
@@ -1277,16 +1221,9 @@ async def test_partitioned_successful_task_interval(timemachine, backend):
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
-        await asyncio.gather(
-            *[
-                ctx.schedule_task(hello, name, interval=datetime.timedelta(seconds=2))
-                for name in PARTITION_TASK_NAMES
-            ]
-        )
+        await asyncio.gather(*[ctx.schedule_task(hello, name, interval=datetime.timedelta(seconds=2)) for name in PARTITION_TASK_NAMES])
         await timemachine.step(datetime.timedelta(seconds=10))
-        await asyncio.gather(
-            *[ctx.unschedule_task(hello, name) for name in PARTITION_TASK_NAMES]
-        )
+        await asyncio.gather(*[ctx.unschedule_task(hello, name) for name in PARTITION_TASK_NAMES])
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task
@@ -1309,16 +1246,9 @@ async def test_partitioned_successful_task_interval_selective(timemachine, backe
 
     async with app.create() as ctx:
         task = asyncio.create_task(ctx.run())
-        await asyncio.gather(
-            *[
-                ctx.schedule_task(hello, name, interval=datetime.timedelta(seconds=2))
-                for name in PARTITION_TASK_NAMES
-            ]
-        )
+        await asyncio.gather(*[ctx.schedule_task(hello, name, interval=datetime.timedelta(seconds=2)) for name in PARTITION_TASK_NAMES])
         await timemachine.step(datetime.timedelta(seconds=10))
-        await asyncio.gather(
-            *[ctx.unschedule_task(hello, name) for name in PARTITION_TASK_NAMES]
-        )
+        await asyncio.gather(*[ctx.unschedule_task(hello, name) for name in PARTITION_TASK_NAMES])
         await timemachine.step(datetime.timedelta(seconds=10))
         ctx.shutdown()
         await task

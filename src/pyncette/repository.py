@@ -4,8 +4,7 @@ import logging
 from typing import Any
 from typing import AsyncContextManager
 from typing import Optional
-
-from typing_extensions import Protocol
+from typing import Protocol
 
 from .model import ContinuationToken
 from .model import Lease
@@ -37,26 +36,19 @@ class Repository(abc.ABC):
         """Deregisters a dynamic task implementation"""
 
     @abc.abstractmethod
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None) -> PollResponse:
         """Polls the task to determine whether it is ready for execution"""
 
     @abc.abstractmethod
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         """Commits the task, which signals a successful run."""
 
-    async def extend_lease(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> Optional[Lease]:
+    @abc.abstractmethod
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Optional[Lease]:
         """Extends the lease on the task. Returns the new lease if lease was still valid."""
 
     @abc.abstractmethod
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         """Unlocks the task, making it eligible for retries in case execution failed."""
 
 

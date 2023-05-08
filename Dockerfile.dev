@@ -6,18 +6,21 @@ RUN apt-get update -y \
 RUN add-apt-repository ppa:deadsnakes/ppa
 RUN apt-get update -y \
     && apt-get install -y \
-        python3.7 \
         python3.8 \
+        python3.8-distutils \
         python3.9 \
+        python3.9-distutils \
         python3.10 \
-        python3-pip \
         python3.10-distutils \
+        python3.11 \
+        python3.11-distutils \
+        python3-pip \
         python3-apt \
         redis-tools \
         postgresql-client \
         mysql-client \
         git \
-        curl \ 
+        curl \
         unzip \
         groff \
     && rm -rf /var/lib/apt/lists/*

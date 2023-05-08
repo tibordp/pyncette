@@ -61,9 +61,7 @@ class MySQLRepository(Repository):
         if self._batch_size < 1:
             raise ValueError("Batch size must be greater than 0")
         if not re.match(r"^[a-z_]+$", self._table_name):
-            raise ValueError(
-                "Table name can only contain lower-case letters and underscores"
-            )
+            raise ValueError("Table name can only contain lower-case letters and underscores")
 
     async def initialize(self) -> None:
         async with self._transaction() as cursor:
@@ -87,7 +85,7 @@ class MySQLRepository(Repository):
                     ON {self._table_name} (parent_name, (GREATEST(COALESCE(locked_until, 0), COALESCE(execute_after, 0))));
                     """
                 )
-            except pymysql.err.InternalError as e:
+            except pymysql.err.OperationalError as e:
                 code, msg = e.args
                 # Index already exists
                 if code != 1061:
@@ -127,10 +125,7 @@ class MySQLRepository(Repository):
                     locked_by = %s
                 WHERE name = %s
                 """,
-                [
-                    (_to_timestamp(locked_until), locked_by, record["name"])
-                    for record in ready_tasks
-                ],
+                [(_to_timestamp(locked_until), locked_by, record["name"]) for record in ready_tasks],
             )
 
             logger.debug(f"poll_dynamic_task returned {ready_tasks}")
@@ -146,9 +141,7 @@ class MySQLRepository(Repository):
                 # May result in an extra round-trip if there were exactly
                 # batch_size tasks available, but we deem this an acceptable
                 # tradeoff.
-                continuation_token=_CONTINUATION_TOKEN
-                if len(ready_tasks) == self._batch_size
-                else None,
+                continuation_token=_CONTINUATION_TOKEN if len(ready_tasks) == self._batch_size else None,
             )
 
     async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
@@ -185,9 +178,7 @@ class MySQLRepository(Repository):
                 (task.canonical_name,),
             )
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None) -> PollResponse:
         async with self._transaction() as cursor:
             await cursor.execute(
                 f"SELECT * FROM {self._table_name} WHERE name = %s FOR UPDATE",
@@ -216,25 +207,15 @@ class MySQLRepository(Repository):
             assert execute_after is not None
             scheduled_at = execute_after
 
-            if (
-                locked_until is not None
-                and locked_until > utc_now
-                and (lease != locked_by)
-            ):
+            if locked_until is not None and locked_until > utc_now and (lease != locked_by):
                 result = ResultType.LOCKED
-            elif (
-                execute_after <= utc_now
-                and task.execution_mode == ExecutionMode.AT_MOST_ONCE
-            ):
+            elif execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_MOST_ONCE:
                 execute_after = task.get_next_execution(utc_now, execute_after)
                 result = ResultType.READY
                 locked_until = None
                 locked_by = None
                 update = True
-            elif (
-                execute_after <= utc_now
-                and task.execution_mode == ExecutionMode.AT_LEAST_ONCE
-            ):
+            elif execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_LEAST_ONCE:
                 locked_until = utc_now + task.lease_duration
                 locked_by = str(uuid.uuid4())
                 result = ResultType.READY
@@ -251,13 +232,9 @@ class MySQLRepository(Repository):
                     execute_after,
                 )
 
-            return PollResponse(
-                result=result, scheduled_at=scheduled_at, lease=locked_by
-            )
+            return PollResponse(result=result, scheduled_at=scheduled_at, lease=locked_by)
 
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         async with self._transaction() as cursor:
             await cursor.execute(
                 f"SELECT * FROM {self._table_name} WHERE name = %s FOR UPDATE",
@@ -280,14 +257,10 @@ class MySQLRepository(Repository):
                 task,
                 None,
                 None,
-                task.get_next_execution(
-                    utc_now, _from_timestamp(record["execute_after"])
-                ),
+                task.get_next_execution(utc_now, _from_timestamp(record["execute_after"])),
             )
 
-    async def extend_lease(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> Optional[Lease]:
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Optional[Lease]:
         async with self._transaction() as cursor:
             locked_until = utc_now + task.lease_duration
             await cursor.execute(
@@ -308,9 +281,7 @@ class MySQLRepository(Repository):
             else:
                 return None
 
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         async with self._transaction() as cursor:
             await cursor.execute(
                 f"""
@@ -375,6 +346,7 @@ class MySQLRepository(Repository):
 
 @contextlib.asynccontextmanager
 async def mysql_repository(
+    *,
     mysql_host: str,
     mysql_user: str,
     mysql_database: str,

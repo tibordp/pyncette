@@ -5,7 +5,7 @@ services:
     image: postgres
     restart: always
     environment:
-      POSTGRES_PASSWORD: password
+      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: pyncette
     ports:
       - "5432:5432"
@@ -40,7 +40,7 @@ services:
     command: bash
     working_dir: /src
     environment:
-      POSTGRES_URL: "postgres://postgres:password@postgres/pyncette"
+      POSTGRES_URL: "postgres://postgres:postgres@postgres/pyncette"
       REDIS_URL: "redis://redis"
       DYNAMODB_ENDPOINT: "http://localstack:4566"
       LOCALSTACK_HOST: "localstack"

@@ -54,7 +54,7 @@ Redis can be enabled by passing :meth:`~pyncette.postgres.postgres_repository` a
     from pyncette.postgres import postgres_repository
 
     app = Pyncette(
-        repository_factory=postgres_repository, 
+        repository_factory=postgres_repository,
         postgres_url='postgres://postgres@localhost/pyncette'
         postgres_table_name='pyncette_tasks'
     )
@@ -74,7 +74,7 @@ The MySQL backend requires MySQL version 8.0+.
     from pyncette.postgres import mysql_repository
 
     app = Pyncette(
-        repository_factory=mysql_repository, 
+        repository_factory=mysql_repository,
         mysql_host="localhost",
         mysql_database="pyncette",
         mysql_user="pyncette",
@@ -90,7 +90,7 @@ The table will be automatically initialized on startup if it does not exists unl
 Amazon DynamoDB
 ---------------
 
-Amazon DynamoDB backend can be configured with :meth:`~pyncette.dynamodb.dynamodb_repository`. 
+Amazon DynamoDB backend can be configured with :meth:`~pyncette.dynamodb.dynamodb_repository`.
 
 .. code-block:: py
 
@@ -98,7 +98,7 @@ Amazon DynamoDB backend can be configured with :meth:`~pyncette.dynamodb.dynamod
     from pyncette.dynamodb import dynamodb_repository
 
     app = Pyncette(
-        repository_factory=dynamodb_repository, 
+        repository_factory=dynamodb_repository,
         dynamodb_region_name="eu-west-1",
         dynamodb_table_name="pyncette",
     )

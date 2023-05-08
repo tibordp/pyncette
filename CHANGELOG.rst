@@ -2,6 +2,15 @@
 Changelog
 =========
 
+Unreleased
+------------------
+
+* Drop support for Python 3.7
+* Add support for Python 3.11
+* Modernize Python package structure and linters
+* Fix a few bugs and type annotations
+
+
 0.8.1 (2021-04-08)
 ------------------
 
@@ -69,7 +78,7 @@ Changelog
 ------------------
 
 * Timezone support
-* More efficient poling when Redis backend is used 
+* More efficient poling when Redis backend is used
 
 
 0.1.1 (2020-01-08)

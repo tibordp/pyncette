@@ -5,7 +5,6 @@ import datetime
 import logging
 from typing import Any
 from typing import AsyncIterator
-from typing import Optional
 
 from pyncette.model import ContinuationToken
 from pyncette.model import Lease
@@ -43,7 +42,7 @@ class FakeRepository(Repository):
         self,
         utc_now: datetime.datetime,
         task: Task,
-        continuation_token: Optional[ContinuationToken] = None,
+        continuation_token: ContinuationToken | None = None,
     ) -> QueryResponse:
         if isinstance(continuation_token, int):
             remaining = self._records_per_tick - continuation_token
@@ -70,24 +69,16 @@ class FakeRepository(Repository):
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         pass
 
-    async def poll_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None
-    ) -> PollResponse:
+    async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Lease | None = None) -> PollResponse:
         return PollResponse(result=ResultType.READY, scheduled_at=utc_now, lease=_LEASE)
 
-    async def commit_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         pass
 
-    async def unlock_task(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> None:
+    async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         pass
 
-    async def extend_lease(
-        self, utc_now: datetime.datetime, task: Task, lease: Lease
-    ) -> Optional[Lease]:
+    async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Lease | None:
         return lease
 
 

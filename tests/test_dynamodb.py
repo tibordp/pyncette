@@ -2,9 +2,10 @@ import os
 
 import pytest
 from botocore.exceptions import ClientError
-from conftest import random_table_name
 
 from pyncette import dynamodb
+
+from conftest import random_table_name
 
 DYNAMODB_ENDPOINT = os.environ.get("DYNAMODB_ENDPOINT", "http://localhost:4566")
 
