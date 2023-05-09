@@ -34,7 +34,7 @@ setup(
     author="Tibor Djurica Potpara",
     author_email="tibor.djurica@ojdip.net",
     url="https://github.com/tibordp/pyncette",
-    package_data={"pyncette": ["py.typed"]},
+    package_data={"pyncette": ["py.typed", "**/*.lua"]},
     packages=find_packages("src"),
     package_dir={"": "src"},
     py_modules=[path.stem for path in Path("src").glob("*.py")],

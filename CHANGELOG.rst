@@ -2,6 +2,11 @@
 Changelog
 =========
 
+Unreleased
+-------------------
+* Include missing lua files in the built wheel
+
+
 0.10.0 (2023-05-08)
 -------------------
 
