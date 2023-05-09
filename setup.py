@@ -24,7 +24,7 @@ extras = {
 
 setup(
     name="pyncette",
-    version="0.10.0",
+    version="0.10.1",
     license="MIT",
     description="A reliable distributed scheduler with pluggable storage backends",
     long_description="{}\n{}".format(
