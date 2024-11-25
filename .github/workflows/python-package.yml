@@ -10,9 +10,9 @@ jobs:
     strategy:
       matrix:
         environment:
-          - python-version: "3.10"
+          - python-version: "3.12"
             toxenv: check
-          - python-version: "3.10"
+          - python-version: "3.12"
             toxenv: docs
           - python-version: "3.8"
             toxenv: py38
@@ -47,7 +47,7 @@ jobs:
     strategy:
       matrix:
         environment:
-          - python-version: "3.10"
+          - python-version: "3.12"
             toxenv: integration
     services:
       postgres:
@@ -74,7 +74,7 @@ jobs:
       localstack:
         image: localstack/localstack
         env:
-          SERVICES: dynamodb
+          SERVICES: dynamodb,s3
         ports:
           - 4566:4566
         options: >-
