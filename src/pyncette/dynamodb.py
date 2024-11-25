@@ -162,9 +162,11 @@ class DynamoDBRepository(Repository):
                         "partition_id": self._get_partition_id(task),
                         "task_id": task.canonical_name,
                     },
-                    ConditionExpression=(Attr("version").not_exists() | Attr("version").eq(0))
-                    if current_version == 0
-                    else Attr("version").eq(current_version),
+                    ConditionExpression=(
+                        (Attr("version").not_exists() | Attr("version").eq(0))
+                        if current_version == 0
+                        else Attr("version").eq(current_version)
+                    ),
                 )
                 task._last_lease = None  # type: ignore
             else:
@@ -189,9 +191,11 @@ class DynamoDBRepository(Repository):
                         ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
                         ":version": current_version + 1,
                     },
-                    ConditionExpression=(Attr("version").not_exists() | Attr("version").eq(0))
-                    if current_version == 0
-                    else Attr("version").eq(current_version),
+                    ConditionExpression=(
+                        (Attr("version").not_exists() | Attr("version").eq(0))
+                        if current_version == 0
+                        else Attr("version").eq(current_version)
+                    ),
                 )
                 record.version = current_version + 1
                 task._last_lease = record  # type: ignore

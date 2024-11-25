@@ -15,7 +15,6 @@ from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Awaitable
 from typing import Callable
-from typing import Deque
 from typing import Sequence
 
 import coloredlogs
@@ -93,7 +92,7 @@ class PyncetteContext:
         utc_now = _current_time()
         await self._repository.unregister_task(utc_now, concrete_task)
 
-    async def _heartbeat(self, task: Task, context: Context, lease: Lease) -> None:
+    async def _heartbeat(self, task: Task, context: Context) -> None:
         utc_now = _current_time()
 
         # For best-effort tasks, there are no leases to be had
@@ -115,7 +114,7 @@ class PyncetteContext:
         context.scheduled_at = poll_response.scheduled_at.astimezone(tz)
         context.args = copy.copy(task.extra_args)
         context._lease = poll_response.lease
-        context.heartbeat = partial(self._heartbeat, task, context, poll_response.lease)
+        context.heartbeat = partial(self._heartbeat, task, context)
 
         return context
 
@@ -156,7 +155,7 @@ class PyncetteContext:
             )
 
     async def _get_active_tasks(self, utc_now: datetime.datetime, tasks: Sequence[Task]) -> AsyncIterator[tuple[Task, Lease | None]]:
-        queue: Deque[tuple[Task, ContinuationToken | None]] = collections.deque((task, None) for task in tasks)
+        queue: collections.deque[tuple[Task, ContinuationToken | None]] = collections.deque((task, None) for task in tasks)
 
         while queue and not self._shutting_down.is_set():
             task, continuation_token = queue.popleft()
