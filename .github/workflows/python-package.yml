@@ -74,11 +74,11 @@ jobs:
       localstack:
         image: localstack/localstack
         env:
-          SERVICES: dynamodb,s3
+          SERVICES: dynamodb
         ports:
           - 4566:4566
         options: >-
-          --health-cmd "curl -fso /dev/null http://localhost:4566/health"
+          --health-cmd "curl -fso /dev/null http://localhost:4566/_localstack/health"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
