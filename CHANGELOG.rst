@@ -2,6 +2,11 @@
 Changelog
 =========
 
+Unreleased
+----------
+* Add support for Python 3.12 and 3.13
+
+
 0.10.1 (2023-05-09)
 -------------------
 * Include missing lua files in the built wheel
