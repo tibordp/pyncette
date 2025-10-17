@@ -1,7 +1,9 @@
-name: Deploy Documentation
+name: Documentation
 
 on:
   push:
+    branches: [ master ]
+  pull_request:
     branches: [ master ]
   workflow_dispatch:
 
@@ -32,11 +34,13 @@ jobs:
     - name: Build docs
       run: uv run mkdocs build --strict
     - name: Upload artifact
+      if: github.event_name != 'pull_request'
       uses: actions/upload-pages-artifact@v3
       with:
         path: site/
 
   deploy:
+    if: github.event_name != 'pull_request'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
