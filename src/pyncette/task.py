@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 from typing import Any
-from typing import Awaitable
+from collections.abc import Awaitable
 
 import dateutil.tz
 from croniter import croniter

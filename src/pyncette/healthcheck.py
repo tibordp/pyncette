@@ -1,7 +1,7 @@
 import asyncio
 import logging
-from typing import AsyncIterator
-from typing import Awaitable
+from collections.abc import AsyncIterator
+from collections.abc import Awaitable
 from typing import Callable
 from typing import Optional
 

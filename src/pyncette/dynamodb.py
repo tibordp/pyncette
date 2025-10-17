@@ -8,7 +8,7 @@ import logging
 import uuid
 from dataclasses import dataclass
 from typing import Any
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from typing import cast
 
 import aioboto3

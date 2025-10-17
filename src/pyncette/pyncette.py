@@ -13,10 +13,10 @@ import time
 from functools import partial
 from typing import Any
 from typing import AsyncContextManager
-from typing import AsyncIterator
-from typing import Awaitable
+from collections.abc import AsyncIterator
+from collections.abc import Awaitable
 from typing import Callable
-from typing import Sequence
+from collections.abc import Sequence
 
 import coloredlogs
 import dateutil.tz
@@ -370,9 +370,11 @@ class Pyncette:
     @contextlib.asynccontextmanager
     async def create(self, context_items: dict[str, Any] | None = None) -> AsyncIterator[PyncetteContext]:
         """Creates the execution context."""
-        async with self._repository_factory(**self._configuration) as repository, self._executor_cls(
-            **self._configuration
-        ) as executor, contextlib.AsyncExitStack() as stack:
+        async with (
+            self._repository_factory(**self._configuration) as repository,
+            self._executor_cls(**self._configuration) as executor,
+            contextlib.AsyncExitStack() as stack,
+        ):
             app_context = PyncetteContext(self, repository, executor)
             root_context = await self._create_root_context(app_context, stack)
             app_context.initialize(root_context)

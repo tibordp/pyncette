@@ -8,7 +8,7 @@ import uuid
 from dataclasses import dataclass
 from importlib.resources import read_text
 from typing import Any
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 import redis
 from redis import asyncio as aioredis

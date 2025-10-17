@@ -4,7 +4,7 @@ import asyncio
 import contextlib
 import logging
 from typing import Any
-from typing import Awaitable
+from collections.abc import Awaitable
 
 logger = logging.getLogger(__name__)
 

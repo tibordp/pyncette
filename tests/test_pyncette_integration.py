@@ -1,6 +1,6 @@
 import asyncio
 import datetime
-from typing import Awaitable
+from collections.abc import Awaitable
 from typing import Callable
 from unittest.mock import MagicMock
 from unittest.mock import call
