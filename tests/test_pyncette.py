@@ -50,7 +50,7 @@ def test_invalid_configuration():
         app = Pyncette()
         app.task(execution_mode=ExecutionMode.AT_MOST_ONCE, failure_mode=FailureMode.UNLOCK)(dummy)
 
-    with pytest.raises(ValueError, match="Invalid timezone specifier 'Gondwana/Atlantis'."):
+    with pytest.raises(ValueError, match=r"Invalid timezone specifier 'Gondwana/Atlantis'"):
         app = Pyncette()
         app.task(schedule="* * * * *", timezone="Gondwana/Atlantis")(dummy)
 
@@ -64,7 +64,7 @@ def test_invalid_configuration():
 
     with pytest.raises(ValueError, match="Unable to determine name for the task"):
         app = Pyncette()
-        app.task(schedule="* * * * *")(object())
+        app.task(schedule="* * * * *")(object())  # ty: ignore[invalid-argument-type]
 
     with pytest.raises(ValueError, match="Unable to determine name for the fixture"):
         app = Pyncette()

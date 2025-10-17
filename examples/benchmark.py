@@ -68,7 +68,7 @@ async def populate(n: int, parallel: int) -> None:
                 tasks = []
 
             if (i + 1) % 1000 == 0:
-                logger.info(f"Scheduled {i+1} tasks")
+                logger.info(f"Scheduled {i + 1} tasks")
 
         await asyncio.gather(*tasks)
         logger.info("DONE!")

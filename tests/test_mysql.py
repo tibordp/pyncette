@@ -4,12 +4,17 @@ import os
 import pymysql
 import pytest
 
-from pyncette import mysql
+from pyncette import mysql, Context
 from pyncette.task import Task
 
 from conftest import random_table_name
 
-DUMMY_TASK = Task(name="foo", func=object(), schedule="* * * * *")
+
+async def dummy_task(context: Context):
+    pass  # pragma: no cover
+
+
+DUMMY_TASK = Task(name="foo", func=dummy_task, schedule="* * * * *")
 
 
 @pytest.mark.asyncio

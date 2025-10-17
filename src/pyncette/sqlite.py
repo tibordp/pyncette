@@ -93,32 +93,36 @@ class SqliteRepository(Repository):
 
             ready_tasks = await self._connection.execute_fetchall(
                 f"""SELECT * FROM {self._table_name}
-                WHERE parent_name = $1 AND MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) <= $2
+                WHERE parent_name = :parent_name AND MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) <= :utc_now
                 ORDER BY MAX(COALESCE(locked_until, 0), COALESCE(execute_after, 0)) ASC
-                LIMIT $3
+                LIMIT :batch_size
                 """,
-                (task.canonical_name, _to_timestamp(utc_now), self._batch_size),
+                {
+                    "parent_name": task.canonical_name,
+                    "utc_now": _to_timestamp(utc_now),
+                    "batch_size": self._batch_size,
+                },
             )
 
             concrete_tasks = [task.instantiate_from_spec(json.loads(record["task_spec"])) for record in ready_tasks]
-
             await self._connection.executemany(
                 f"""
                 UPDATE {self._table_name}
                 SET
-                    locked_until = $2,
-                    locked_by = $3
-                WHERE name = $1
+                    locked_until = :locked_until,
+                    locked_by = :locked_by
+                WHERE name = :name
                 """,
                 [
-                    (
-                        concrete_task.canonical_name,
-                        _to_timestamp(locked_until),
-                        str(locked_by),
-                    )
+                    {
+                        "name": concrete_task.canonical_name,
+                        "locked_until": _to_timestamp(locked_until),
+                        "locked_by": str(locked_by),
+                    }
                     for concrete_task in concrete_tasks
                 ],
             )
+
             return QueryResponse(
                 tasks=[(concrete_task, Lease(locked_by)) for concrete_task in concrete_tasks],
                 continuation_token=_CONTINUATION_TOKEN if len(concrete_tasks) == self._batch_size else None,
@@ -128,8 +132,8 @@ class SqliteRepository(Repository):
         async with self._transaction(explicit_begin=True):
             assert task.parent_task is not None
             record = await self._connection.execute_fetchall(
-                f"SELECT 1 FROM {self._table_name} WHERE name = ?",
-                (task.canonical_name,),
+                f"SELECT 1 FROM {self._table_name} WHERE name = :name",
+                {"name": task.canonical_name},
             )
 
             if record:
@@ -167,15 +171,15 @@ class SqliteRepository(Repository):
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction():
             await self._connection.execute_fetchall(
-                f"DELETE FROM {self._table_name} WHERE name = $1",
-                (task.canonical_name,),
+                f"DELETE FROM {self._table_name} WHERE name = :name",
+                {"name": task.canonical_name},
             )
 
     async def poll_task(self, utc_now: datetime.datetime, task: Task, lease: Optional[Lease] = None) -> PollResponse:
         async with self._transaction(explicit_begin=True):
             records = await self._connection.execute_fetchall(
-                f"SELECT * FROM {self._table_name} WHERE name = ?",
-                (task.canonical_name,),
+                f"SELECT * FROM {self._table_name} WHERE name = :name",
+                {"name": task.canonical_name},
             )
 
             if not records:
@@ -191,9 +195,12 @@ class SqliteRepository(Repository):
                 await self._connection.execute_fetchall(
                     f"""
                     INSERT INTO {self._table_name} (name, execute_after)
-                    VALUES (:name, :locked_until)
+                    VALUES (:name, :execute_after)
                     """,
-                    (task.canonical_name, _to_timestamp(execute_after)),
+                    {
+                        "name": task.canonical_name,
+                        "execute_after": _to_timestamp(execute_after),
+                    },
                 )
             else:
                 record = next(iter(records))
@@ -204,7 +211,7 @@ class SqliteRepository(Repository):
             assert execute_after is not None
             scheduled_at = execute_after
 
-            if locked_until is not None and locked_until > utc_now and (lease != locked_by):
+            if locked_until is not None and locked_until > utc_now and (str(lease) != locked_by):
                 result = ResultType.LOCKED
             elif execute_after <= utc_now and task.execution_mode == ExecutionMode.AT_MOST_ONCE:
                 execute_after = task.get_next_execution(utc_now, execute_after)
@@ -235,8 +242,8 @@ class SqliteRepository(Repository):
     async def commit_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         async with self._transaction(explicit_begin=True):
             records = await self._connection.execute_fetchall(
-                f"SELECT * FROM {self._table_name} WHERE name = $1",
-                (task.canonical_name,),
+                f"SELECT * FROM {self._table_name} WHERE name = :name",
+                {"name": task.canonical_name},
             )
 
             if not records:
@@ -263,10 +270,14 @@ class SqliteRepository(Repository):
                 f"""
                 UPDATE {self._table_name}
                 SET
-                    locked_until = ?
-                WHERE name = ? AND locked_by = ?
+                    locked_until = :locked_until
+                WHERE name = :name AND locked_by = :locked_by
                 """,
-                (_to_timestamp(locked_until), task.canonical_name, str(lease)),
+                {
+                    "locked_until": _to_timestamp(locked_until),
+                    "name": task.canonical_name,
+                    "locked_by": str(lease),
+                },
             ) as cursor:
                 if cursor.rowcount == 1:
                     return lease
@@ -281,9 +292,12 @@ class SqliteRepository(Repository):
                 SET
                     locked_by = NULL,
                     locked_until = NULL
-                WHERE name = ? AND locked_by = ?
+                WHERE name = :name AND locked_by = :locked_by
                 """,
-                (task.canonical_name, str(lease)),
+                {
+                    "name": task.canonical_name,
+                    "locked_by": str(lease),
+                },
             )
 
     async def _update_record(
@@ -295,8 +309,8 @@ class SqliteRepository(Repository):
     ) -> None:
         if execute_after is None:
             await self._connection.execute_fetchall(
-                f"DELETE FROM {self._table_name} WHERE name = $1",
-                (task.canonical_name,),
+                f"DELETE FROM {self._table_name} WHERE name = :name",
+                {"name": task.canonical_name},
             )
         else:
             await self._connection.execute_fetchall(

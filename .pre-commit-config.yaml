@@ -2,30 +2,42 @@
 #   pre-commit install --install-hooks
 # To update the versions:
 #   pre-commit autoupdate
-exclude: '^(\.tox|ci/templates|\.bumpversion\.cfg)(/|$)'
-# Note the order is intentional to avoid multiple passes of the hooks
+exclude: '^\.bumpversion\.cfg(/|$)'
+
 repos:
-  - repo: https://github.com/asottile/pyupgrade
-    rev: v3.19.0
+  # Ruff - Fast Python linter and formatter (replaces black, isort, pyupgrade, and many flake8 plugins)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.0
     hooks:
-    -   id: pyupgrade
-        args: [--py38-plus]
-  - repo: https://github.com/charliermarsh/ruff-pre-commit
-    rev: v0.8.0
-    hooks:
+      # Run the linter
       - id: ruff
-        args: [--fix, --exit-non-zero-on-fix, --show-fixes]
-  - repo: https://github.com/psf/black
-    rev: 24.10.0
-    hooks:
-      - id: black
+        args: [--fix]
+      # Run the formatter
+      - id: ruff-format
+
+  # Pre-commit hooks for file quality
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.4.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
-        exclude_types:
-          - c
+        exclude_types: [svg]
       - id: end-of-file-fixer
-        exclude_types:
-          - c
+        exclude_types: [svg]
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: check-merge-conflict
       - id: debug-statements
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # Markdown formatting
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.21
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm  # GitHub Flavored Markdown
+          - mdformat-black  # Format Python code blocks

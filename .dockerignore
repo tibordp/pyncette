@@ -6,7 +6,9 @@
 .coverage
 htmlcov/
 **/_build/
-.tox/
+.venv/
+.pytest_cache/
+site/
 build/
 dist/
 .vscode/
