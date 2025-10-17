@@ -1,6 +1,6 @@
 # Overview
 
-[![Documentation Status](https://readthedocs.org/projects/pyncette/badge/?style=flat)](https://readthedocs.org/projects/pyncette)
+[![Documentation](https://img.shields.io/badge/docs-github%20pages-blue)](https://tibordp.github.io/pyncette/)
 [![Github Actions Build Status](https://github.com/tibordp/pyncette/workflows/Python%20package/badge.svg?branch=master)](https://github.com/tibordp/pyncette/actions?query=branch%3Amaster+workflow%3A%22Python+package%22)
 [![Coverage Status](https://codecov.io/gh/tibordp/pyncette/branch/master/graphs/badge.svg?branch=master)](https://codecov.io/github/tibordp/pyncette)
 [![PyPI Package latest release](https://img.shields.io/pypi/v/pyncette.svg)](https://pypi.org/project/pyncette)
@@ -35,7 +35,7 @@ pip install https://github.com/tibordp/pyncette/archive/master.zip
 
 ## Documentation
 
-https://pyncette.readthedocs.io
+https://tibordp.github.io/pyncette/
 
 ## Usage example
 

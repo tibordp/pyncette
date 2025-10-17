@@ -67,8 +67,8 @@ dev = [
 ]
 
 [project.urls]
-Documentation = "https://pyncette.readthedocs.io/"
-Changelog = "https://pyncette.readthedocs.io/en/latest/changelog/"
+Documentation = "https://tibordp.github.io/pyncette/"
+Changelog = "https://tibordp.github.io/pyncette/changelog/"
 "Issue Tracker" = "https://github.com/tibordp/pyncette/issues"
 Homepage = "https://github.com/tibordp/pyncette"
 
