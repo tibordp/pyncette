@@ -6,7 +6,7 @@ import logging
 import re
 import uuid
 from typing import Any
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from typing import Optional
 from typing import cast
 

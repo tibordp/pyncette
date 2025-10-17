@@ -16,7 +16,7 @@ import logging
 import pathlib
 import random
 import time
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 from typing import TextIO
 
 from pyncette import Context

@@ -3,11 +3,9 @@ import datetime
 import math
 import time
 from typing import Any
-from typing import AsyncIterator
-from typing import Awaitable
+from collections.abc import AsyncIterator
+from collections.abc import Awaitable
 from typing import Callable
-from typing import Dict
-from typing import List
 from typing import Optional
 
 from prometheus_client import Counter
@@ -29,7 +27,7 @@ from .task import Task
 TASK_LABELS = ["task_name"]
 
 
-def _get_task_labels(task: Task) -> Dict[str, str]:
+def _get_task_labels(task: Task) -> dict[str, str]:
     # Instances of dynamic tasks can have high cardinality, so we choose the task template name
     return {"task_name": task.parent_task.name if task.parent_task else task.name}
 
@@ -42,7 +40,7 @@ class OperationMetricSet:
     exceptions: Counter
     requests_in_progress: Gauge
 
-    def __init__(self, operation_name: str, labels: List[str]):
+    def __init__(self, operation_name: str, labels: list[str]):
         self.requests = Counter(
             f"pyncette_{operation_name}_total",
             f"Total count of {operation_name} operations",

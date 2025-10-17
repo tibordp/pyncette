@@ -5,8 +5,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import AsyncIterator
-from typing import Awaitable
+from collections.abc import AsyncIterator
+from collections.abc import Awaitable
 from typing import Callable
 from typing import NewType
 from typing import Protocol

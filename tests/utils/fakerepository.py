@@ -4,7 +4,7 @@ import contextlib
 import datetime
 import logging
 from typing import Any
-from typing import AsyncIterator
+from collections.abc import AsyncIterator
 
 from pyncette.model import ContinuationToken
 from pyncette.model import Lease

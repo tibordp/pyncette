@@ -24,7 +24,6 @@ import uuid
 from multiprocessing import Process
 from multiprocessing.sharedctypes import RawValue  # type: ignore
 from typing import Any
-from typing import List
 from typing import Optional
 
 import coloredlogs
@@ -77,7 +76,7 @@ async def populate(n: int, parallel: int) -> None:
 async def run(
     hit_count: Any,
     staleness: Any,
-    enabled_partitions: Optional[List[int]],
+    enabled_partitions: Optional[list[int]],
 ) -> None:
     async with app.create() as app_context:
         app_context.add_to_context("hit_count", hit_count)
@@ -110,8 +109,8 @@ def setup(log_level: str) -> None:
 
 
 async def report(
-    hit_counts: List[Any],
-    stalenesses: List[Any],
+    hit_counts: list[Any],
+    stalenesses: list[Any],
 ) -> None:
     previous_hit_count = 0
     previous_sample = time.perf_counter()

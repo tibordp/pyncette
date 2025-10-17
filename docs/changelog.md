@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Breaking Changes
+
+- **Dropped Python 3.8 support** - Minimum Python version is now 3.9
+
 ### Packaging and Tooling Modernization
 
 - Migrated from `setup.py` to modern PEP 621 `pyproject.toml` with hatchling build backend
