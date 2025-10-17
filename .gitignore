@@ -23,13 +23,13 @@ lib64
 venv*/
 pyvenv*/
 pip-wheel-metadata/
+.venv/
 
 # Installer logs
 pip-log.txt
 
 # Unit test / coverage reports
 .coverage
-.tox
 .coverage.*
 .pytest_cache/
 nosetests.xml
@@ -51,8 +51,9 @@ htmlcov
 output/*.html
 output/*/index.html
 
-# Sphinx
+# Documentation builds
 docs/_build
+site/
 
 .DS_Store
 *~
@@ -75,3 +76,5 @@ docs/_build
 
 ## Pyncette
 pyncette.db
+
+uv.lock

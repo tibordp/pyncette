@@ -86,7 +86,7 @@ class MySQLRepository(Repository):
                     """
                 )
             except pymysql.err.OperationalError as e:
-                code, msg = e.args
+                code, _msg = e.args
                 # Index already exists
                 if code != 1061:
                     raise

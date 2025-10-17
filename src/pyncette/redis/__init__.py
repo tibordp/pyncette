@@ -55,7 +55,7 @@ class _LuaScript:
 
         for _ in range(3):
             try:
-                return await client.evalsha(self._sha, len(keys), *keys, *args)
+                return await client.evalsha(self._sha, len(keys), *keys, *args)  # ty: ignore[invalid-await]
             except redis.exceptions.NoScriptError:
                 logger.warning("We seem to have lost the LUA script, reloading...")
                 await self.register(client)
@@ -159,7 +159,7 @@ class RedisRepository(Repository):
         # In most cases, however, we can assume that the base time has not changed since the last invocation,
         # so by caching it, we can poll a task using a single round-trip (if we are wrong, the loop below will still
         # ensure correctness as the version will not match).
-        last_lease = getattr(task, "_last_lease", None)
+        last_lease: _ManageScriptResponse | None = getattr(task, "_last_lease", None)
         if isinstance(lease, _ManageScriptResponse):
             version, execute_after, locked_by = (
                 lease.version,
@@ -206,7 +206,7 @@ class RedisRepository(Repository):
             else:
                 return PollResponse(
                     result=response.result,
-                    scheduled_at=execute_after,
+                    scheduled_at=execute_after,  # ty: ignore[invalid-argument-type]
                     lease=Lease(response),
                 )
 

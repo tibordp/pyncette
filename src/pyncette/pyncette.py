@@ -8,6 +8,7 @@ import datetime
 import logging
 import os
 import signal
+import sys
 import time
 from functools import partial
 from typing import Any
@@ -280,7 +281,7 @@ class Pyncette:
                 "name": kwargs.get("name", None) or getattr(func, "__name__", None),
             }
             self._check_task_name(task_kwargs["name"])
-            task = Task(func=func, dynamic=False, **task_kwargs)
+            task = Task(func=func, dynamic=False, **task_kwargs)  # ty: ignore[invalid-argument-type]
             self._tasks.append(task)
 
             return task
@@ -300,7 +301,7 @@ class Pyncette:
             }
 
             self._check_task_name(task_kwargs["name"])
-            task = Task(func=func, dynamic=True, **task_kwargs)
+            task = Task(func=func, dynamic=True, **task_kwargs)  # ty: ignore[invalid-argument-type]
             self._tasks.append(task)
             return task
 
@@ -319,7 +320,7 @@ class Pyncette:
             }
 
             self._check_task_name(task_kwargs["name"])
-            task = PartitionedTask(func=func, **task_kwargs)
+            task = PartitionedTask(func=func, **task_kwargs)  # ty: ignore[invalid-argument-type]
             self._tasks.extend(task.get_partitions())
 
             return task
@@ -411,7 +412,16 @@ class Pyncette:
         if os.environ.get("USE_UVLOOP", False):
             import uvloop
 
-            uvloop.install()
+            if sys.version_info >= (3, 11):
+                with asyncio.Runner(loop_factory=uvloop.new_event_loop) as runner:
+                    runner.run(self._run_main())
 
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(self._run_main())
+                return
+            else:
+                uvloop.install()
+
+        if sys.version_info >= (3, 14):
+            asyncio.run(self._run_main())
+        else:
+            loop = asyncio.get_event_loop()
+            loop.run_until_complete(self._run_main())

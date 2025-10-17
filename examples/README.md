@@ -22,7 +22,6 @@ instances can be scheduled with `schedule_task` (and unscheduled with `unschedul
 Using a persistent backend, Pyncette supports efficient execution of a large number of
 dynamic task instances.
 
-
 ## [delay_queue.py](./delay_queue.py)
 
 This example uses Pyncette to implement a reliable delay queue (persistence is needed for durability
@@ -47,7 +46,9 @@ service clients to the task context.
 This example illustrates the use of healthcheck HTTP server. It exposes the /health endpoint
 which returns 200 if last successfull poll was less than 2 poll intervals ago, 500 otherwise.
 
-    curl localhost:8080/health
+```
+curl localhost:8080/health
+```
 
 ## [heartbeat.py](./heartbeat.py)
 
@@ -81,7 +82,9 @@ code alongside it.
 
 To see the exported metrics while running this example, use something like
 
-    curl localhost:9699/metrics
+```
+curl localhost:9699/metrics
+```
 
 ## [benchmark.py](./benchmark.py)
 
@@ -89,11 +92,13 @@ This example schedules a large number of dynamic tasks and then runs them (in mu
 to gauge the total throughput of Pyncette for a particular backend.
 
 To run this example, configure the selected backend in the Pyncette constructor, then run populate the database.
+
 ```
 python examples/benchmark.py populate -n <number of tasks to insert>
 ```
 
 While the tasks are populating you can run
+
 ```
 python examples/benchmark.py run --processes <# of processes>
 ```

@@ -4,12 +4,17 @@ import os
 import asyncpg
 import pytest
 
-from pyncette import postgres
+from pyncette import postgres, Context
 from pyncette.task import Task
 
 from conftest import random_table_name
 
-DUMMY_TASK = Task(name="foo", func=object(), schedule="* * * * *")
+
+async def dummy_task(context: Context):
+    pass  # pragma: no cover
+
+
+DUMMY_TASK = Task(name="foo", func=dummy_task, schedule="* * * * *")
 
 
 @pytest.mark.asyncio

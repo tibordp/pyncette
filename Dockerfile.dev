@@ -15,7 +15,7 @@ RUN apt-get update -y \
         python3.11 \
         python3.11-distutils \
         python3.12 \
-        python3.12-distutils \
+        python3.13 \
         python3-pip \
         python3-apt \
         redis-tools \
@@ -31,4 +31,8 @@ RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2
     && unzip awscliv2.zip \
     && ./aws/install
 
-RUN python3 -m pip install tox awscli-local[ver2]
+# Install uv for package management
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh
+ENV PATH="/root/.local/bin:$PATH"
+
+RUN python3 -m pip install awscli-local[ver2]
