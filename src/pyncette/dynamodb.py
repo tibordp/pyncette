@@ -21,9 +21,11 @@ from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
+from pyncette.model import ListTasksResponse
 from pyncette.model import PollResponse
 from pyncette.model import QueryResponse
 from pyncette.model import ResultType
+from pyncette.model import TaskState
 from pyncette.repository import Repository
 from pyncette.task import Task
 
@@ -377,6 +379,97 @@ class DynamoDBRepository(Repository):
             record = await self._retreive_item(task, consistent_read=True)
 
         raise PyncetteException("Unable to acquire the lock on the task due to contention")
+
+    async def get_task_state(
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+    ) -> TaskState | None:
+        response = await self._table.get_item(
+            Key={
+                "partition_id": self._get_partition_id(task),
+                "task_id": task.canonical_name,
+            }
+        )
+
+        if "Item" not in response:
+            return None
+
+        item = response["Item"]
+
+        # For dynamic tasks, re-instantiate from spec to ensure we have fresh parameters
+        if task.parent_task is not None:
+            task_spec = json.loads(item["task_spec"]) if item.get("task_spec") else None
+            if not task_spec:
+                raise PyncetteException(f"Task {task.canonical_name} has no task_spec stored")
+            instantiated_task = task.parent_task.instantiate_from_spec(task_spec)
+        else:
+            # Static task - use as-is (no task_spec stored)
+            instantiated_task = task
+
+        execute_after = item.get("execute_after")
+        assert execute_after is not None, "execute_after should not be None for existing tasks"
+        scheduled_at = datetime.datetime.fromisoformat(execute_after)
+
+        return TaskState(
+            task=instantiated_task,
+            scheduled_at=scheduled_at,
+            locked_until=datetime.datetime.fromisoformat(item["locked_until"]) if item.get("locked_until") else None,
+            locked_by=item.get("locked_by"),
+        )
+
+    async def list_task_states(
+        self,
+        utc_now: datetime.datetime,
+        parent_task: Task,
+        limit: int | None = None,
+        continuation_token: ContinuationToken | None = None,
+    ) -> ListTasksResponse:
+        if limit is None:
+            limit = self._batch_size
+
+        # Query DynamoDB on partition_id (which encodes parent_name)
+        prefix = (self._partition_prefix or "").replace(":", "::")
+        partition_id = f"{prefix}:{parent_task.canonical_name}"
+
+        query_kwargs: dict[str, Any] = {
+            "KeyConditionExpression": Key("partition_id").eq(partition_id),
+            "Limit": limit,
+        }
+
+        if continuation_token is not None:
+            query_kwargs["ExclusiveStartKey"] = continuation_token
+
+        response = await self._table.query(**query_kwargs)
+
+        tasks = []
+        for item in response.get("Items", []):
+            task_spec = json.loads(item["task_spec"]) if item.get("task_spec") else None
+            if not task_spec:
+                logger.warning(f"Task {item['task_id']} has no task_spec, skipping")
+                continue
+
+            instantiated_task = parent_task.instantiate_from_spec(task_spec)
+
+            execute_after = item.get("execute_after")
+            assert execute_after is not None, "execute_after should not be None for existing tasks"
+            scheduled_at = datetime.datetime.fromisoformat(execute_after)
+
+            tasks.append(
+                TaskState(
+                    task=instantiated_task,
+                    scheduled_at=scheduled_at,
+                    locked_until=datetime.datetime.fromisoformat(item["locked_until"]) if item.get("locked_until") else None,
+                    locked_by=item.get("locked_by"),
+                )
+            )
+
+        next_token = ContinuationToken(response["LastEvaluatedKey"]) if "LastEvaluatedKey" in response else None
+
+        return ListTasksResponse(
+            tasks=tasks,
+            continuation_token=next_token,
+        )
 
     async def extend_lease(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> Lease | None:
         assert isinstance(lease, _TaskRecord)

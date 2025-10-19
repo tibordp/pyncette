@@ -16,8 +16,10 @@ from . import pyncette
 from .model import Context
 from .model import ContinuationToken
 from .model import Lease
+from .model import ListTasksResponse
 from .model import PollResponse
 from .model import QueryResponse
+from .model import TaskState
 from .pyncette import Pyncette
 from .pyncette import PyncetteContext
 from .repository import Repository
@@ -133,6 +135,26 @@ class MeteredRepository(Repository):
         """Unlocks the task, making it eligible for retries in case execution failed."""
         async with self._metric_set.measure(operation="unlock_task", **_get_task_labels(task)):
             return await self._inner.unlock_task(utc_now, task, lease)
+
+    async def get_task_state(
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+    ) -> Optional[TaskState]:
+        """Retrieve state of a task instance"""
+        async with self._metric_set.measure(operation="get_task_state", **_get_task_labels(task)):
+            return await self._inner.get_task_state(utc_now, task)
+
+    async def list_task_states(
+        self,
+        utc_now: datetime.datetime,
+        parent_task: Task,
+        limit: Optional[int] = None,
+        continuation_token: Optional[ContinuationToken] = None,
+    ) -> ListTasksResponse:
+        """List all instances of a dynamic task with pagination"""
+        async with self._metric_set.measure(operation="list_task_states", **_get_task_labels(parent_task)):
+            return await self._inner.list_task_states(utc_now, parent_task, limit, continuation_token)
 
 
 _task_metric_set = OperationMetricSet("tasks", TASK_LABELS)

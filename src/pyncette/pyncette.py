@@ -31,10 +31,12 @@ from .model import ExecutionMode
 from .model import FailureMode
 from .model import FixtureFunc
 from .model import Lease
+from .model import ListTasksResponse
 from .model import MiddlewareFunc
 from .model import PollResponse
 from .model import ResultType
 from .model import TaskFunc
+from .model import TaskState
 from .repository import Repository
 from .repository import RepositoryFactory
 from .sqlite import sqlite_repository
@@ -106,6 +108,70 @@ class PyncetteContext:
 
         utc_now = _current_time()
         await self._repository.unregister_task(utc_now, concrete_task)
+
+    async def get_task(self, task: Task, instance_name: str | None = None) -> TaskState | None:
+        """Get the state of a task instance
+
+        Args:
+            task: For static tasks, the task itself. For dynamic tasks, either:
+                  - The parent task (template) with instance_name provided
+                  - An already-instantiated concrete dynamic task (instance_name should be None)
+            instance_name: The instance name for dynamic tasks when passing the parent task.
+                          Must be None for static tasks or pre-instantiated dynamic tasks.
+
+        Returns:
+            TaskState if found, None otherwise
+
+        Raises:
+            ValueError: If instance_name is provided with a non-dynamic task or an already-instantiated task
+        """
+        # Follow the pattern used in unschedule_task
+        if task.parent_task:
+            # Already a concrete instance of a dynamic task
+            if instance_name is not None:
+                raise ValueError("Cannot provide instance_name with already-instantiated dynamic task")
+            concrete_task = task
+        else:
+            if instance_name is None:
+                # Static task
+                concrete_task = task
+            else:
+                # Dynamic task template + instance_name
+                if not task.dynamic:
+                    raise ValueError("instance_name provided but task is not dynamic")
+                concrete_task = task.instantiate(instance_name, interval=datetime.timedelta())
+
+        utc_now = _current_time()
+        return await self._repository.get_task_state(utc_now, concrete_task)
+
+    async def list_tasks(
+        self,
+        task: Task,
+        limit: int | None = None,
+        continuation_token: ContinuationToken | None = None,
+    ) -> ListTasksResponse:
+        """List all instances of a dynamic task with pagination
+
+        Args:
+            task: The dynamic task template
+            limit: Maximum number of tasks to return (backend may return less)
+            continuation_token: Token from previous response to get next page
+
+        Returns:
+            ListTasksResponse with tasks and optional continuation token
+
+        Raises:
+            ValueError: If task is not dynamic
+
+        Note:
+            Results are not guaranteed to be in any particular order.
+            Backends may order results to provide stable pagination.
+        """
+        if not task.dynamic:
+            raise ValueError("Cannot list instances of non-dynamic task")
+
+        utc_now = _current_time()
+        return await self._repository.list_task_states(utc_now, task, limit, continuation_token)
 
     async def _heartbeat(self, task: Task, context: Context) -> None:
         utc_now = _current_time()
