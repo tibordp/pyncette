@@ -33,11 +33,6 @@ logger = logging.getLogger(__name__)
 MAX_OPTIMISTIC_RETRY_COUNT = 5
 
 
-def _utcnow() -> datetime.datetime:
-    # Use aware-UTC throughout, mirroring dynamodb's use of naive ISO timestamps.
-    return datetime.datetime.now(datetime.timezone.utc)
-
-
 @dataclass
 class _TaskRecord:
     execute_after: datetime.datetime | None
@@ -86,7 +81,6 @@ class MongoDBRepository(Repository):
     _db: AsyncIOMotorDatabase
     _coll: AsyncIOMotorCollection
     _batch_size: int
-    _skip_collection_create: bool
     _partition_prefix: str
 
     def __init__(
@@ -101,7 +95,6 @@ class MongoDBRepository(Repository):
         self._db = self._client[kwargs.get("mongodb_database_name", "pyncette")]
         self._coll = self._db[kwargs.get("mongodb_collection_name", "tasks")]
         self._batch_size = kwargs.get("batch_size", 100)
-        self._skip_collection_create = skip_collection_create
         self._partition_prefix = partition_prefix
 
         if self._batch_size < 1:
@@ -162,8 +155,8 @@ class MongoDBRepository(Repository):
 
         # Build the update doc
         set_fields: dict[str, Any] = {
-            "execute_after": record.execute_after.isoformat() if record.execute_after else "",
-            "locked_until": record.locked_until.isoformat() if record.locked_until else "",
+            "execute_after": record.execute_after.isoformat() if record.execute_after else None,
+            "locked_until": record.locked_until.isoformat() if record.locked_until else None,
             "locked_by": record.locked_by,
             "ready_at": ready_at,
             "version": current_version + 1,
@@ -220,10 +213,7 @@ class MongoDBRepository(Repository):
                 ]
 
         cursor = (
-            self._coll.find(filt, projection={"_id": False})
-            # .filter({"task_spec": {"$exists": True}})  # defensive: only dynamic tasks
-            .sort([("ready_at", ASCENDING), ("task_id", ASCENDING)])
-            .limit(self._batch_size)
+            self._coll.find(filt, projection={"_id": False}).sort([("ready_at", ASCENDING), ("task_id", ASCENDING)]).limit(self._batch_size)
         )
         items = [doc async for doc in cursor]
 
@@ -441,7 +431,7 @@ class MongoDBRepository(Repository):
             instantiated_task = task
 
         execute_after = doc.get("execute_after")
-        assert execute_after is not None, "execute_after should not be None for existing tasks"
+        assert execute_after, "execute_after should not be empty for existing tasks"
         scheduled_at = datetime.datetime.fromisoformat(execute_after)
 
         return TaskState(
@@ -482,7 +472,7 @@ class MongoDBRepository(Repository):
                 continue
             instantiated_task = parent_task.instantiate_from_spec(task_spec)
             execute_after = item.get("execute_after")
-            assert execute_after is not None, "execute_after should not be None for existing tasks"
+            assert execute_after, "execute_after should not be empty for existing tasks"
             scheduled_at = datetime.datetime.fromisoformat(execute_after)
             tasks.append(
                 TaskState(
@@ -523,21 +513,15 @@ class MongoDBRepository(Repository):
     # ---------------------- lifecycle ----------------------
 
     async def initialize(self) -> None:
-        if self._skip_collection_create:
-            # Still ensure indexes exist (idempotent)
-            pass
-
-        # Unique identity index and ready queue index
+        # Indexes are idempotent, always ensure they exist
         await self._coll.create_index(
             [("partition_id", ASCENDING), ("task_id", ASCENDING)],
             name="partition_task_unique",
             unique=True,
-            background=True,
         )
         await self._coll.create_index(
             [("partition_id", ASCENDING), ("ready_at", ASCENDING)],
             name="ready_at_queue_idx",
-            background=True,
         )
 
 
