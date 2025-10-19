@@ -37,7 +37,7 @@ class Repository(abc.ABC):
             force: If False, fails if task is locked. If True, overwrites everything including locks.
 
         Raises:
-            PyncetteException: If force=False and task is currently locked
+            TaskLockedException: If force=False and task is currently locked
         """
 
     @abc.abstractmethod
