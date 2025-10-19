@@ -115,68 +115,73 @@ class PostgresRepository(Repository):
     async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         assert task.parent_task is not None
 
+        new_execute_after = task.get_next_execution(utc_now, None)
+        task_spec = json.dumps(task.as_spec())
+
         async with self._transaction() as connection:
-            # Check if record exists and get its current state
-            record = await connection.fetchrow(
-                f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
-                task.canonical_name,
-            )
-
-            new_execute_after = task.get_next_execution(utc_now, None)
-            task_spec = json.dumps(task.as_spec())
-
-            if record:
-                existing_locked_until = record["locked_until"]
-                existing_execute_after = record["execute_after"]
-
-                # Check if task is currently locked
-                if not force and existing_locked_until is not None and existing_locked_until > utc_now:
-                    raise TaskLockedException(task, existing_locked_until)
-
-                # Determine the execute_after to use
-                if force:
-                    # Force mode: use new schedule and clear locks
-                    execute_after = new_execute_after
-                    locked_until = None
-                    locked_by = None
-                else:
-                    # Safe mode: keep sooner schedule to avoid starvation
-                    if existing_execute_after is not None and new_execute_after is not None:
-                        execute_after = min(existing_execute_after, new_execute_after)
-                    else:
-                        execute_after = new_execute_after or existing_execute_after
-                    # Preserve lock state (though we already checked it's not locked)
-                    locked_until = existing_locked_until
-                    locked_by = record["locked_by"]
-
-                result = await connection.execute(
-                    f"""
-                    UPDATE {self._table_name}
-                    SET
-                        task_spec = $2,
-                        execute_after = $3,
-                        locked_until = $4,
-                        locked_by = $5
-                    WHERE
-                        name = $1
-                    """,
-                    task.canonical_name,
-                    task_spec,
-                    execute_after,
-                    locked_until,
-                    locked_by,
-                )
-            else:
+            if force:
+                # Force mode: unconditional upsert
                 result = await connection.execute(
                     f"""
                     INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
                     VALUES ($1, $2, $3, $4)
+                    ON CONFLICT (name) DO UPDATE
+                    SET
+                        task_spec = $3,
+                        execute_after = $4,
+                        locked_by = NULL,
+                        locked_until = NULL
                     """,
                     task.canonical_name,
                     task.parent_task.canonical_name,
                     task_spec,
                     new_execute_after,
                 )
+            else:
+                # Safe mode: check locks and preserve sooner schedule
+                record = await connection.fetchrow(
+                    f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
+                    task.canonical_name,
+                )
+
+                if record:
+                    existing_locked_until = record["locked_until"]
+                    existing_execute_after = record["execute_after"]
+
+                    # Check if task is currently locked
+                    if existing_locked_until is not None and existing_locked_until > utc_now:
+                        raise TaskLockedException(task, existing_locked_until)
+
+                    # Keep sooner schedule to avoid postponement
+                    if existing_execute_after is not None and new_execute_after is not None:
+                        execute_after = min(existing_execute_after, new_execute_after)
+                    else:
+                        execute_after = new_execute_after or existing_execute_after
+
+                    result = await connection.execute(
+                        f"""
+                        UPDATE {self._table_name}
+                        SET
+                            task_spec = $2,
+                            execute_after = $3
+                        WHERE
+                            name = $1
+                        """,
+                        task.canonical_name,
+                        task_spec,
+                        execute_after,
+                    )
+                else:
+                    result = await connection.execute(
+                        f"""
+                        INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
+                        VALUES ($1, $2, $3, $4)
+                        """,
+                        task.canonical_name,
+                        task.parent_task.canonical_name,
+                        task_spec,
+                        new_execute_after,
+                    )
 
             logger.debug(f"register_task returned {result}")
 
