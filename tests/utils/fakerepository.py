@@ -63,7 +63,7 @@ class FakeRepository(Repository):
             continuation_token=remaining if remaining else None,
         )
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         pass
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:

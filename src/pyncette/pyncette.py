@@ -70,12 +70,26 @@ class PyncetteContext:
         self._root_context = root_context
         self._last_tick = _current_time()
 
-    async def schedule_task(self, task: Task, instance_name: str, **kwargs: Any) -> Task:
-        """Schedules a concrete instance of a dynamic task"""
+    async def schedule_task(self, task: Task, instance_name: str, force: bool = False, **kwargs: Any) -> Task:
+        """Schedules a concrete instance of a dynamic task
+
+        Args:
+            task: The dynamic task to schedule
+            instance_name: Name for this concrete instance
+            force: If False (default), fails if task is locked or preserves sooner schedule.
+                   If True, overwrites everything including locks and schedule.
+            **kwargs: Additional arguments for the task instance (schedule, interval, etc.)
+
+        Returns:
+            The concrete task instance
+
+        Raises:
+            PyncetteException: If force=False and task is currently locked
+        """
         concrete_task = task.instantiate(instance_name, **kwargs)
         utc_now = _current_time()
 
-        await self._repository.register_task(utc_now, concrete_task)
+        await self._repository.register_task(utc_now, concrete_task, force=force)
         return concrete_task
 
     async def unschedule_task(self, task: Task, instance_name: str | None = None) -> None:

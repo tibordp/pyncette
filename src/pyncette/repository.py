@@ -28,8 +28,17 @@ class Repository(abc.ABC):
         """Queries the dynamic tasks for execution"""
 
     @abc.abstractmethod
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        """Registers a dynamic task"""
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
+        """Registers a dynamic task
+
+        Args:
+            utc_now: Current UTC timestamp
+            task: The task instance to register
+            force: If False, fails if task is locked. If True, overwrites everything including locks.
+
+        Raises:
+            PyncetteException: If force=False and task is currently locked
+        """
 
     @abc.abstractmethod
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:

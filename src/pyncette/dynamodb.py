@@ -109,22 +109,68 @@ class DynamoDBRepository(Repository):
             continuation_token=response.get("LastEvaluatedKey", None),
         )
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
-        execute_after = task.get_next_execution(utc_now, None)
-        assert execute_after is not None
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
+        new_execute_after = task.get_next_execution(utc_now, None)
+        assert new_execute_after is not None
 
-        await self._table.put_item(
-            Item={
-                "partition_id": self._get_partition_id(task),
-                "task_id": task.canonical_name,
-                "task_spec": json.dumps(task.as_spec()),
-                "version": 0,
-                "locked_by": None,
-                "locked_until": None,
-                "execute_after": execute_after.isoformat(),
-                "ready_at": f"{execute_after.isoformat()}_{task.canonical_name}",
-            },
-        )
+        # Check if record exists and get its current state
+        existing_record = await self._retreive_item(task, consistent_read=True)
+
+        if existing_record:
+            # Check if task is currently locked
+            if not force and existing_record.locked_until is not None and existing_record.locked_until > utc_now:
+                raise PyncetteException(
+                    f"Cannot update task {task.canonical_name} while it is locked. "
+                    f"Task is locked until {existing_record.locked_until}. Use force=True to override."
+                )
+
+            # Determine the execute_after to use
+            if force:
+                # Force mode: use new schedule and clear locks
+                execute_after = new_execute_after
+                locked_until = None
+                locked_by = None
+                version = 0  # Reset version when forcing
+            else:
+                # Safe mode: keep sooner schedule to avoid starvation
+                if existing_record.execute_after is not None:
+                    execute_after = min(existing_record.execute_after, new_execute_after)
+                else:
+                    execute_after = new_execute_after
+                # Preserve lock state (though we already checked it's not locked)
+                locked_until = existing_record.locked_until
+                locked_by = existing_record.locked_by
+                version = existing_record.version
+
+            ready_at = max(execute_after, locked_until) if locked_until is not None else execute_after
+
+            # Update existing item
+            await self._table.put_item(
+                Item={
+                    "partition_id": self._get_partition_id(task),
+                    "task_id": task.canonical_name,
+                    "task_spec": json.dumps(task.as_spec()),
+                    "version": version,
+                    "locked_by": locked_by,
+                    "locked_until": locked_until.isoformat() if locked_until else None,
+                    "execute_after": execute_after.isoformat(),
+                    "ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
+                },
+            )
+        else:
+            # Create new item
+            await self._table.put_item(
+                Item={
+                    "partition_id": self._get_partition_id(task),
+                    "task_id": task.canonical_name,
+                    "task_spec": json.dumps(task.as_spec()),
+                    "version": 0,
+                    "locked_by": None,
+                    "locked_until": None,
+                    "execute_after": new_execute_after.isoformat(),
+                    "ready_at": f"{new_execute_after.isoformat()}_{task.canonical_name}",
+                },
+            )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         await self._table.delete_item(

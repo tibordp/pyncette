@@ -104,10 +104,10 @@ class MeteredRepository(Repository):
         async with self._metric_set.measure(operation="poll_dynamic_task", **_get_task_labels(task)):
             return await self._inner.poll_dynamic_task(utc_now, task, continuation_token)
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         """Registers a dynamic task"""
         async with self._metric_set.measure(operation="register_task", **_get_task_labels(task)):
-            return await self._inner.register_task(utc_now, task)
+            return await self._inner.register_task(utc_now, task, force=force)
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         """Deregisters a dynamic task implementation"""

@@ -95,17 +95,37 @@ elseif ARGV[1] == 'EXTEND' then
         result = "LEASE_MISMATCH"
     end
 elseif ARGV[1] == 'REGISTER' then
-    local _, incoming_execute_after, incoming_task_spec = unpack(ARGV)
+    local _, incoming_execute_after, incoming_task_spec, force, utc_now = unpack(ARGV)
+    local force = force == '1'
 
     if not key_exists then
         version, execute_after, task_spec = 0, incoming_execute_after, incoming_task_spec
         redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after, 'task_spec', task_spec)
         redis.call('zadd', KEYS[2], 0, getIndexKey())
+        result = "READY"
     else
-        updateRecord(incoming_execute_after, false, false, incoming_task_spec)
+        -- Check if task is locked when force is false
+        if not force and locked_until and utc_now < locked_until then
+            result = "LOCKED"
+        else
+            local final_execute_after
+            if force then
+                -- Force mode: use new schedule and clear locks
+                final_execute_after = incoming_execute_after
+                updateRecord(final_execute_after, false, false, incoming_task_spec)
+            else
+                -- Safe mode: keep sooner schedule to avoid starvation
+                if execute_after and execute_after < incoming_execute_after then
+                    final_execute_after = execute_after
+                else
+                    final_execute_after = incoming_execute_after
+                end
+                -- Preserve locks
+                updateRecord(final_execute_after, locked_until, locked_by, incoming_task_spec)
+            end
+            result = "READY"
+        end
     end
-
-    result = "READY"
 elseif ARGV[1] == 'UNREGISTER' then
     if key_exists then
         deleteRecord()

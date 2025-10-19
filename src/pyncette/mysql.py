@@ -144,32 +144,79 @@ class MySQLRepository(Repository):
                 continuation_token=_CONTINUATION_TOKEN if len(ready_tasks) == self._batch_size else None,
             )
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         assert task.parent_task is not None
 
         async with self._transaction() as cursor:
-            execute_at = _to_timestamp(task.get_next_execution(utc_now, None))
+            # Check if record exists and get its current state
+            await cursor.execute(
+                f"SELECT * FROM {self._table_name} WHERE name = %s",
+                (task.canonical_name,),
+            )
+            record = await cursor.fetchone()
+
+            new_execute_after = task.get_next_execution(utc_now, None)
             task_spec = json.dumps(task.as_spec())
 
-            await cursor.execute(
-                f"""
-                INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
-                VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    task_spec = %s,
-                    execute_after = %s,
-                    locked_by = NULL,
-                    locked_until = NULL
-                """,
-                (
-                    task.canonical_name,
-                    task.parent_task.canonical_name,
-                    task_spec,
-                    execute_at,
-                    task_spec,
-                    execute_at,
-                ),
-            )
+            if record:
+                existing_locked_until = _from_timestamp(record["locked_until"])
+                existing_execute_after = _from_timestamp(record["execute_after"])
+
+                # Check if task is currently locked
+                if not force and existing_locked_until is not None and existing_locked_until > utc_now:
+                    raise PyncetteException(
+                        f"Cannot update task {task.canonical_name} while it is locked. "
+                        f"Task is locked until {existing_locked_until}. Use force=True to override."
+                    )
+
+                # Determine the execute_after to use
+                if force:
+                    # Force mode: use new schedule and clear locks
+                    execute_after = new_execute_after
+                    locked_until = None
+                    locked_by = None
+                else:
+                    # Safe mode: keep sooner schedule to avoid starvation
+                    if existing_execute_after is not None and new_execute_after is not None:
+                        execute_after = min(existing_execute_after, new_execute_after)
+                    else:
+                        execute_after = new_execute_after or existing_execute_after
+                    # Preserve lock state (though we already checked it's not locked)
+                    locked_until = existing_locked_until
+                    locked_by = record["locked_by"]
+
+                await cursor.execute(
+                    f"""
+                    UPDATE {self._table_name}
+                    SET
+                        task_spec = %s,
+                        execute_after = %s,
+                        locked_until = %s,
+                        locked_by = %s
+                    WHERE
+                        name = %s
+                    """,
+                    (
+                        task_spec,
+                        _to_timestamp(execute_after),
+                        _to_timestamp(locked_until),
+                        locked_by,
+                        task.canonical_name,
+                    ),
+                )
+            else:
+                await cursor.execute(
+                    f"""
+                    INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (
+                        task.canonical_name,
+                        task.parent_task.canonical_name,
+                        task_spec,
+                        _to_timestamp(new_execute_after),
+                    ),
+                )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction() as cursor:
