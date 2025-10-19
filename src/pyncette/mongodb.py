@@ -522,6 +522,7 @@ class MongoDBRepository(Repository):
         await self._coll.create_index(
             [("partition_id", ASCENDING), ("ready_at", ASCENDING)],
             name="ready_at_queue_idx",
+            partialFilterExpression={"task_spec": {"$exists": True}},
         )
 
 
