@@ -151,7 +151,7 @@ class MySQLRepository(Repository):
         async with self._transaction() as cursor:
             # Check if record exists and get its current state
             await cursor.execute(
-                f"SELECT * FROM {self._table_name} WHERE name = %s",
+                f"SELECT * FROM {self._table_name} WHERE name = %s FOR UPDATE",
                 (task.canonical_name,),
             )
             record = await cursor.fetchone()

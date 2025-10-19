@@ -118,7 +118,7 @@ class PostgresRepository(Repository):
         async with self._transaction() as connection:
             # Check if record exists and get its current state
             record = await connection.fetchrow(
-                f"SELECT * FROM {self._table_name} WHERE name = $1",
+                f"SELECT * FROM {self._table_name} WHERE name = $1 FOR UPDATE",
                 task.canonical_name,
             )
 
