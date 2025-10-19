@@ -17,6 +17,7 @@ from boto3.dynamodb.conditions import Key
 from botocore.exceptions import ClientError
 
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
@@ -136,10 +137,7 @@ class DynamoDBRepository(Repository):
 
             # Check if task is currently locked
             if existing_record and existing_record.locked_until is not None and existing_record.locked_until > utc_now:
-                raise PyncetteException(
-                    f"Cannot update task {task.canonical_name} while it is locked. "
-                    f"Task is locked until {existing_record.locked_until}. Use force=True to override."
-                )
+                raise TaskLockedException(task, existing_record.locked_until)
 
             # Build the updated record
             if existing_record:

@@ -14,6 +14,7 @@ import aiosqlite
 import dateutil.tz
 
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
@@ -145,10 +146,7 @@ class SqliteRepository(Repository):
 
                 # Check if task is currently locked
                 if not force and existing_locked_until is not None and existing_locked_until > utc_now:
-                    raise PyncetteException(
-                        f"Cannot update task {task.canonical_name} while it is locked. "
-                        f"Task is locked until {existing_locked_until}. Use force=True to override."
-                    )
+                    raise TaskLockedException(task, existing_locked_until)
 
                 # Determine the execute_after to use
                 if force:

@@ -373,11 +373,7 @@ Once-off tasks have the same reliability guarantees as recurrent tasks, which is
 
 ## Updating dynamic tasks
 
-When calling `schedule_task` on an existing dynamic task instance, Pyncette provides safety guarantees to prevent race conditions and schedule starvation.
-
-### Default behavior (safe mode)
-
-By default, `schedule_task` operates in safe mode:
+When calling `schedule_task` on an existing dynamic task, the task spec (including arguments and schedule) will be updated. By default, `schedule_task` will fail if the task is currently executing to avoid race conditions.
 
 ```python
 @app.dynamic_task()
@@ -386,57 +382,34 @@ async def hello(context: Context) -> None:
 
 
 async with app.create() as app_context:
-    # Initial schedule: every 5 seconds
+    # Create the task
     await app_context.schedule_task(
         hello, "user_1", interval=datetime.timedelta(seconds=5), username="Alice"
     )
 
-    # Update: change username and interval
-    # This will update the username but preserve the sooner execution time
+    # Update the username - this will update the task spec
     await app_context.schedule_task(
-        hello, "user_1", interval=datetime.timedelta(minutes=1), username="Bob"
+        hello, "user_1", interval=datetime.timedelta(seconds=5), username="Bob"
     )
 
     await app_context.run()
 ```
 
-In safe mode, `schedule_task`:
-
-- **Fails if the task is locked**: If the task is currently executing, `schedule_task` will raise `PyncetteException` to prevent clearing the execution lock
-- **Preserves sooner execution time**: Uses `MIN(existing_time, new_time)` to prevent schedule starvation when called repeatedly
-- **Updates task parameters**: The `task_spec` (including arguments like `username`) is always updated
-
-This prevents two important issues:
-
-1. **Race condition**: Calling `schedule_task` while a task is executing would otherwise clear locks, potentially causing duplicate execution
-1. **Schedule starvation**: Repeated calls to `schedule_task` would otherwise keep pushing the execution time into the future
-
-### Force mode
-
-If you need to unconditionally override a task's schedule and state, use `force=True`:
+If the task is currently locked, `schedule_task` will raise `TaskLockedException`. To allow updates during execution, use `force=True`:
 
 ```python
-async with app.create() as app_context:
-    # Force update will override everything, even if task is currently executing
-    await app_context.schedule_task(
-        hello,
-        "user_1",
-        interval=datetime.timedelta(minutes=5),
-        username="Charlie",
-        force=True,
-    )
-    await app_context.run()
+await app_context.schedule_task(
+    hello,
+    "user_1",
+    interval=datetime.timedelta(minutes=5),
+    username="Charlie",
+    force=True,
+)
 ```
 
-With `force=True`:
+With `force=True`, the task will be updated immediately even if it is executing. The currently running instance will fail to commit its result (lease lost), but will continue to run until completion.
 
-- Ignores lock state (allows updating even while task is executing)
-- Uses the new execution time (no MIN logic)
-- Clears locks and resets the schedule
-- Any currently executing instance will fail to commit (lease lost)
-
-!!!warning
-Use `force=True` with caution. If a task is currently executing when you call `schedule_task` with `force=True`, the running instance will lose its lease and fail to commit its result, but it will continue running until completion or timeout.
+When updating the schedule of an existing task, the sooner of the existing and new execution times is used, preventing repeated calls from indefinitely postponing execution.
 
 ## Performance
 

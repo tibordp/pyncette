@@ -14,6 +14,7 @@ import redis
 from redis import asyncio as aioredis
 
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -152,7 +153,7 @@ class RedisRepository(Repository):
         )
 
         if response.result == ResultType.LOCKED:
-            raise PyncetteException(f"Cannot update task {task.canonical_name} while it is locked. Use force=True to override.")
+            raise TaskLockedException(task)
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         await self._manage_record(task, "UNREGISTER")

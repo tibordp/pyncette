@@ -15,6 +15,7 @@ from pyncette import Pyncette
 from pyncette import PyncetteContext
 from pyncette.errors import LeaseLostException
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.executor import SynchronousExecutor
 from pyncette.utils import with_heartbeat
 
@@ -1356,7 +1357,7 @@ async def test_schedule_task_fails_when_locked_without_force(timemachine, backen
 
         # Task should be executing now, so re-scheduling should fail
         try:
-            with pytest.raises(PyncetteException, match="locked"):
+            with pytest.raises(TaskLockedException):
                 await ctx.schedule_task(long_task, "1", interval=datetime.timedelta(seconds=10))
         finally:
             ctx.shutdown()
