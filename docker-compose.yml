@@ -31,6 +31,14 @@ services:
       MYSQL_USER: pyncette
       MYSQL_PASSWORD: password
 
+  mongodb:
+    image: mongo:7
+    restart: always
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: pyncette
+
   shell:
     build:
       context: .
@@ -45,6 +53,7 @@ services:
       AWS_ACCESS_KEY_ID: "foobar"
       AWS_SECRET_ACCESS_KEY: "foobar"
       MYSQL_HOST: "mysql"
+      MONGODB_URI: "mongodb://mongodb:27017"
     volumes:
       - type: bind
         source: .
