@@ -69,7 +69,7 @@ The MySQL backend requires MySQL version 8.0+.
 
 ```python
 from pyncette import Pyncette, Context
-from pyncette.postgres import mysql_repository
+from pyncette.mysql import mysql_repository
 
 app = Pyncette(
     repository_factory=mysql_repository,
@@ -82,6 +82,40 @@ app = Pyncette(
 ```
 
 The table will be automatically initialized on startup if it does not exists unless `mysql_skip_table_create` is set to `True`.
+
+## MongoDB
+
+MongoDB can be configured by passing `mongodb_repository` as `repository_factory` parameter to the `Pyncette` constructor.
+
+The MongoDB backend requires MongoDB version 4.2+.
+
+```python
+from pyncette import Pyncette, Context
+from pyncette.mongodb import mongodb_repository
+
+app = Pyncette(
+    repository_factory=mongodb_repository,
+    mongodb_uri="mongodb://localhost:27017",
+    mongodb_database_name="pyncette",
+    mongodb_collection_name="tasks",
+)
+```
+
+Optionally, tasks can be partitioned if the MongoDB collection is shared among different Pyncette apps:
+
+```python
+app = Pyncette(
+    repository_factory=mongodb_repository,
+    mongodb_uri="mongodb://localhost:27017",
+    mongodb_database_name="pyncette",
+    mongodb_collection_name="tasks",
+    mongodb_partition_prefix="my_app",
+)
+```
+
+The collection and indexes will be automatically created on startup. Indexes are idempotent and always created to ensure optimal performance.
+
+The MongoDB backend uses optimistic locking with version-based Compare-And-Swap (CAS) operations for safe concurrent access, similar to the DynamoDB backend.
 
 ## Amazon DynamoDB
 

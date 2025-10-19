@@ -101,6 +101,7 @@ Pyncette comes with an implementation for the following backends (used for persi
 - Redis (`pip install pyncette[redis]`)
 - PostgreSQL (`pip install pyncette[postgres]`)
 - MySQL 8.0+ (`pip install pyncette[mysql]`)
+- MongoDB (`pip install pyncette[mongodb]`)
 - Amazon DynamoDB (`pip install pyncette[dynamodb]`)
 
 Pyncette imposes few requirements on the underlying datastores, so it can be extended to support other databases or
@@ -135,7 +136,7 @@ uv sync --extra all
 uv run pytest -m "not integration" tests
 ```
 
-**Integration tests** (requires Redis, PostgreSQL, MySQL, DynamoDB):
+**Integration tests** (requires Redis, PostgreSQL, MySQL, MongoDB, DynamoDB):
 
 Using Docker Compose to set up all backends:
 

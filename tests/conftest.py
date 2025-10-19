@@ -10,6 +10,7 @@ import pytest
 
 import pyncette
 from pyncette.dynamodb import dynamodb_repository
+from pyncette.mongodb import mongodb_repository
 from pyncette.mysql import mysql_repository
 from pyncette.postgres import postgres_repository
 from pyncette.redis import redis_repository
@@ -110,6 +111,20 @@ class MySQLBackend:
         }
 
 
+class MongoDBBackend:
+    __name__ = "mongodb"
+    is_persistent = True
+
+    def get_args(self, timemachine):
+        return {
+            "repository_factory": wrap_factory(mongodb_repository, timemachine),
+            "mongodb_uri": os.environ.get("MONGODB_URI", "mongodb://localhost:27017"),
+            "mongodb_database_name": os.environ.get("MONGODB_DATABASE", "pyncette"),
+            "mongodb_collection_name": random_table_name(),
+            "mongodb_partition_prefix": random_table_name(),
+        }
+
+
 class DefaultBackend:
     __name__ = "default"
     is_persistent = False
@@ -123,6 +138,7 @@ all_backends = [
     MySQLBackend(),
     RedisBackend(),
     DynamoDBBackend(),
+    MongoDBBackend(),
     DefaultBackend(),
     SqlitePersistedBackend(),
 ]

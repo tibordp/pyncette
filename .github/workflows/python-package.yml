@@ -102,6 +102,17 @@ jobs:
           --health-retries 5
         ports:
           - 3306:3306
+      mongodb:
+        image: mongo:7
+        env:
+          MONGO_INITDB_DATABASE: pyncette
+        options: >-
+          --health-cmd "mongosh --eval 'db.adminCommand({ping: 1})'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 27017:27017
 
     steps:
     - uses: actions/checkout@v4
@@ -120,6 +131,7 @@ jobs:
         POSTGRES_URL: postgres://postgres:postgres@localhost/postgres
         AWS_ACCESS_KEY_ID: "foobar"
         AWS_SECRET_ACCESS_KEY: "foobar"
+        MONGODB_URI: mongodb://localhost:27017
       run: uv run pytest --cov --cov-report=term-missing --cov-report=xml -vv tests
     - name: Upload coverage
       uses: codecov/codecov-action@v5

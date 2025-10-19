@@ -30,6 +30,12 @@ For installing with PostgreSQL peristence:
 pip install pyncette[postgres]
 ```
 
+For installing with MongoDB peristence:
+
+```bash
+pip install pyncette[mongodb]
+```
+
 For installing with Prometheus metrics exporter:
 
 ```bash

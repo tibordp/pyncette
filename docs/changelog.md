@@ -4,6 +4,11 @@
 
 ### Features
 
+- Added MongoDB backend support (`pip install pyncette[mongodb]`)
+  - Uses Motor (async MongoDB driver) for efficient async operations
+  - Implements optimistic locking using version-based CAS (Compare-And-Swap)
+  - Compatible with MongoDB 4.2+
+  - Supports all Pyncette features including dynamic tasks and partitioning
 - Added `force` parameter to `schedule_task` to control behavior when updating dynamic task instances
   - Default (`force=False`): Fails with `TaskLockedException` if task is locked, preserves sooner execution time to prevent schedule postponement
   - With `force=True`: Unconditionally overwrites task state including locks and schedule
@@ -13,7 +18,7 @@
     - For dynamic tasks: `get_task(template, "instance")` or `get_task(concrete_instance)`
   - `list_tasks(parent_task, limit=None, continuation_token=None)` - List all instances of a dynamic task with pagination
   - Returns `TaskState` objects containing task, scheduled_at, locked_until, and locked_by
-  - Implemented across all backends: PostgreSQL, MySQL, SQLite, DynamoDB, Redis
+  - Implemented across all backends: PostgreSQL, MySQL, SQLite, DynamoDB, Redis, MongoDB
 
 ### Bug Fixes
 
