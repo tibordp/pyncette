@@ -51,7 +51,7 @@ To set up `pyncette` for local development:
 1. Set up your development environment:
 
    ```bash
-   uv sync --extra all --extra dev
+   uv sync --extra all
    ```
 
 1. Running integration tests assumes that there will be Redis, PostgreSQL, MySQL and Localstack (for DynamoDB) running on localhost. Alternatively, there is a Docker Compose environment that will set up all the backends so that integration tests can run seamlessly:
@@ -110,6 +110,12 @@ To run tests for a specific Python version:
 
 ```bash
 uv venv --python 3.11
-uv sync --extra all --extra dev
-uv run pytest tests
+uv sync --extra all
+uv run pytest
+```
+
+To run tests in parallel
+
+```bash
+uv run pytest -n auto
 ```

@@ -73,9 +73,11 @@ class SqlitePersistedBackend:
     is_persistent = True
 
     def get_args(self, timemachine):
+        worker_id = os.environ.get("PYTEST_XDIST_WORKER", "master")
+
         return {
             "repository_factory": wrap_factory(sqlite_repository, timemachine),
-            "sqlite_database": os.environ.get("SQLITE_DATABASE", "pyncette.db"),
+            "sqlite_database": os.environ.get("SQLITE_DATABASE", f"pyncette_{worker_id}.db"),
             "sqlite_table_name": random_table_name(),
         }
 

@@ -54,16 +54,6 @@ all = [
     "cryptography>=40.0.2",
     "uvloop>=0.22.1",
 ]
-dev = [
-    "pytest",
-    "pytest-asyncio",
-    "pytest-cov",
-    "pre-commit",
-    "ty",
-    "ruff",
-    "mkdocs-material",
-    "mkdocstrings[python]",
-]
 
 [project.urls]
 Documentation = "https://tibordp.github.io/pyncette/"
@@ -139,3 +129,16 @@ exclude_lines = [
     "pragma: no cover",
 ]
 omit = ["*migrations*"]
+
+[dependency-groups]
+dev = [
+    "pytest-xdist>=3.8.0",
+    "pytest",
+    "pytest-asyncio",
+    "pytest-cov",
+    "pre-commit",
+    "ty",
+    "ruff",
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
