@@ -415,6 +415,7 @@ async def mysql_repository(
         password=mysql_password,
         db=mysql_database,
         loop=asyncio.get_running_loop(),
+        init_command="SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
     )
     try:
         repository = MySQLRepository(mysql_pool, **kwargs)
