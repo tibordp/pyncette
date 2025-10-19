@@ -371,6 +371,73 @@ async with app.create() as app_context:
 
 Once-off tasks have the same reliability guarantees as recurrent tasks, which is controlled by `execution_mode` and `failure_mode` parameters, but in case of success, they will not be scheduled again.
 
+## Updating dynamic tasks
+
+When calling `schedule_task` on an existing dynamic task instance, Pyncette provides safety guarantees to prevent race conditions and schedule starvation.
+
+### Default behavior (safe mode)
+
+By default, `schedule_task` operates in safe mode:
+
+```python
+@app.dynamic_task()
+async def hello(context: Context) -> None:
+    print(f"Hello {context.args['username']}")
+
+
+async with app.create() as app_context:
+    # Initial schedule: every 5 seconds
+    await app_context.schedule_task(
+        hello, "user_1", interval=datetime.timedelta(seconds=5), username="Alice"
+    )
+
+    # Update: change username and interval
+    # This will update the username but preserve the sooner execution time
+    await app_context.schedule_task(
+        hello, "user_1", interval=datetime.timedelta(minutes=1), username="Bob"
+    )
+
+    await app_context.run()
+```
+
+In safe mode, `schedule_task`:
+
+- **Fails if the task is locked**: If the task is currently executing, `schedule_task` will raise `PyncetteException` to prevent clearing the execution lock
+- **Preserves sooner execution time**: Uses `MIN(existing_time, new_time)` to prevent schedule starvation when called repeatedly
+- **Updates task parameters**: The `task_spec` (including arguments like `username`) is always updated
+
+This prevents two important issues:
+
+1. **Race condition**: Calling `schedule_task` while a task is executing would otherwise clear locks, potentially causing duplicate execution
+1. **Schedule starvation**: Repeated calls to `schedule_task` would otherwise keep pushing the execution time into the future
+
+### Force mode
+
+If you need to unconditionally override a task's schedule and state, use `force=True`:
+
+```python
+async with app.create() as app_context:
+    # Force update will override everything, even if task is currently executing
+    await app_context.schedule_task(
+        hello,
+        "user_1",
+        interval=datetime.timedelta(minutes=5),
+        username="Charlie",
+        force=True,
+    )
+    await app_context.run()
+```
+
+With `force=True`:
+
+- Ignores lock state (allows updating even while task is executing)
+- Uses the new execution time (no MIN logic)
+- Clears locks and resets the schedule
+- Any currently executing instance will fail to commit (lease lost)
+
+!!!warning
+Use `force=True` with caution. If a task is currently executing when you call `schedule_task` with `force=True`, the running instance will lose its lease and fail to commit its result, but it will continue running until completion or timeout.
+
 ## Performance
 
 Tasks are executed in parallel. If you have a lot of long running tasks, you can set `concurrency_limit` in `Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting `concurrency_limit` to 1 is equivalent of serializing the execution of all the tasks.

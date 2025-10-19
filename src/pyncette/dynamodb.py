@@ -113,52 +113,9 @@ class DynamoDBRepository(Repository):
         new_execute_after = task.get_next_execution(utc_now, None)
         assert new_execute_after is not None
 
-        # Check if record exists and get its current state
-        existing_record = await self._retreive_item(task, consistent_read=True)
-
-        if existing_record:
-            # Check if task is currently locked
-            if not force and existing_record.locked_until is not None and existing_record.locked_until > utc_now:
-                raise PyncetteException(
-                    f"Cannot update task {task.canonical_name} while it is locked. "
-                    f"Task is locked until {existing_record.locked_until}. Use force=True to override."
-                )
-
-            # Determine the execute_after to use
-            if force:
-                # Force mode: use new schedule and clear locks
-                execute_after = new_execute_after
-                locked_until = None
-                locked_by = None
-                version = 0  # Reset version when forcing
-            else:
-                # Safe mode: keep sooner schedule to avoid starvation
-                if existing_record.execute_after is not None:
-                    execute_after = min(existing_record.execute_after, new_execute_after)
-                else:
-                    execute_after = new_execute_after
-                # Preserve lock state (though we already checked it's not locked)
-                locked_until = existing_record.locked_until
-                locked_by = existing_record.locked_by
-                version = existing_record.version
-
-            ready_at = max(execute_after, locked_until) if locked_until is not None else execute_after
-
-            # Update existing item
-            await self._table.put_item(
-                Item={
-                    "partition_id": self._get_partition_id(task),
-                    "task_id": task.canonical_name,
-                    "task_spec": json.dumps(task.as_spec()),
-                    "version": version,
-                    "locked_by": locked_by,
-                    "locked_until": locked_until.isoformat() if locked_until else None,
-                    "execute_after": execute_after.isoformat(),
-                    "ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
-                },
-            )
-        else:
-            # Create new item
+        if force:
+            # Force mode: unconditional overwrite
+            ready_at = new_execute_after
             await self._table.put_item(
                 Item={
                     "partition_id": self._get_partition_id(task),
@@ -168,9 +125,48 @@ class DynamoDBRepository(Repository):
                     "locked_by": None,
                     "locked_until": None,
                     "execute_after": new_execute_after.isoformat(),
-                    "ready_at": f"{new_execute_after.isoformat()}_{task.canonical_name}",
+                    "ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
                 },
             )
+            return
+
+        # Safe mode: CAS loop with optimistic locking
+        for _ in range(MAX_OPTIMISTIC_RETRY_COUNT):
+            existing_record = await self._retreive_item(task, consistent_read=True)
+
+            # Check if task is currently locked
+            if existing_record and existing_record.locked_until is not None and existing_record.locked_until > utc_now:
+                raise PyncetteException(
+                    f"Cannot update task {task.canonical_name} while it is locked. "
+                    f"Task is locked until {existing_record.locked_until}. Use force=True to override."
+                )
+
+            # Build the updated record
+            if existing_record:
+                record = _TaskRecord(
+                    execute_after=min(existing_record.execute_after, new_execute_after)
+                    if existing_record.execute_after
+                    else new_execute_after,
+                    locked_until=existing_record.locked_until,
+                    locked_by=existing_record.locked_by,
+                    version=existing_record.version,
+                )
+            else:
+                # Item doesn't exist, create with version=0
+                record = _TaskRecord(
+                    execute_after=new_execute_after,
+                    locked_until=None,
+                    locked_by=None,
+                    version=0,
+                )
+
+            # Use _update_item with task_spec update (will create if not exists)
+            # Don't set _last_lease since this is not poll_task's caching context
+            if await self._update_item(task, record, update_task_spec=True, set_last_lease=False):
+                return  # Success
+            # Otherwise retry due to version conflict
+
+        raise PyncetteException(f"Unable to register task {task.canonical_name} due to contention")
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         await self._table.delete_item(
@@ -199,7 +195,7 @@ class DynamoDBRepository(Repository):
         )
         return result
 
-    async def _update_item(self, task: Task, record: _TaskRecord) -> bool:
+    async def _update_item(self, task: Task, record: _TaskRecord, update_task_spec: bool = False, set_last_lease: bool = True) -> bool:
         current_version = record.version
         try:
             if record.execute_after is None:
@@ -214,29 +210,40 @@ class DynamoDBRepository(Repository):
                         else Attr("version").eq(current_version)
                     ),
                 )
-                task._last_lease = None  # type: ignore
+                if set_last_lease:
+                    task._last_lease = None  # type: ignore
             else:
                 ready_at = max(record.execute_after, record.locked_until) if record.locked_until is not None else record.execute_after
+
+                # Build UpdateExpression and AttributeValues
+                update_fields = [
+                    "execute_after=:execute_after",
+                    "locked_until=:locked_until",
+                    "locked_by=:locked_by",
+                    "ready_at=:ready_at",
+                    "version=:version",
+                ]
+                attribute_values = {
+                    ":execute_after": record.execute_after.isoformat() if record.execute_after is not None else "",
+                    ":locked_until": record.locked_until.isoformat() if record.locked_until is not None else "",
+                    ":locked_by": record.locked_by,
+                    ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
+                    ":version": current_version + 1,
+                }
+
+                if update_task_spec:
+                    update_fields.append("task_spec=:task_spec")
+                    attribute_values[":task_spec"] = json.dumps(task.as_spec())
+
+                update_expression = "set " + ", ".join(update_fields)
+
                 await self._table.update_item(
                     Key={
                         "partition_id": self._get_partition_id(task),
                         "task_id": task.canonical_name,
                     },
-                    UpdateExpression="""
-                    set execute_after=:execute_after,
-                        locked_until=:locked_until,
-                        locked_by=:locked_by,
-                        ready_at=:ready_at,
-                        version=:version
-                    """,
-                    ExpressionAttributeValues={
-                        ":execute_after": record.execute_after.isoformat() if record.execute_after is not None else "",
-                        ":locked_until": record.locked_until.isoformat() if record.locked_until is not None else "",
-                        ":locked_by": record.locked_by,
-                        # Add a suffix to ready_at to guarantee uniqueness of the secondary index
-                        ":ready_at": f"{ready_at.isoformat()}_{task.canonical_name}",
-                        ":version": current_version + 1,
-                    },
+                    UpdateExpression=update_expression,
+                    ExpressionAttributeValues=attribute_values,
                     ConditionExpression=(
                         (Attr("version").not_exists() | Attr("version").eq(0))
                         if current_version == 0
@@ -244,7 +251,8 @@ class DynamoDBRepository(Repository):
                     ),
                 )
                 record.version = current_version + 1
-                task._last_lease = record  # type: ignore
+                if set_last_lease:
+                    task._last_lease = record  # type: ignore
         except ClientError as e:
             if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
                 return False
