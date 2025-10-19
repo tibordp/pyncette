@@ -8,8 +8,10 @@ from typing import Protocol
 
 from .model import ContinuationToken
 from .model import Lease
+from .model import ListTasksResponse
 from .model import PollResponse
 from .model import QueryResponse
+from .model import TaskState
 from .task import Task
 
 logger = logging.getLogger(__name__)
@@ -59,6 +61,46 @@ class Repository(abc.ABC):
     @abc.abstractmethod
     async def unlock_task(self, utc_now: datetime.datetime, task: Task, lease: Lease) -> None:
         """Unlocks the task, making it eligible for retries in case execution failed."""
+
+    @abc.abstractmethod
+    async def get_task_state(
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+    ) -> Optional[TaskState]:
+        """Retrieve state of a task instance
+
+        Args:
+            utc_now: Current UTC timestamp
+            task: The concrete task instance (static task, or instantiated dynamic task)
+
+        Returns:
+            TaskState if found, None otherwise
+        """
+
+    @abc.abstractmethod
+    async def list_task_states(
+        self,
+        utc_now: datetime.datetime,
+        parent_task: Task,
+        limit: Optional[int] = None,
+        continuation_token: Optional[ContinuationToken] = None,
+    ) -> ListTasksResponse:
+        """List all instances of a dynamic task with pagination
+
+        Args:
+            utc_now: Current UTC timestamp
+            parent_task: The dynamic task template
+            limit: Maximum number of tasks to return (backend may return less)
+            continuation_token: Token from previous response to get next page
+
+        Returns:
+            ListTasksResponse with tasks and optional continuation token
+
+        Note:
+            Results are not guaranteed to be in any particular order.
+            The continuation_token is backend-specific and opaque to callers.
+        """
 
 
 class RepositoryFactory(Protocol):

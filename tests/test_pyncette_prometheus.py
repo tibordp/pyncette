@@ -37,6 +37,9 @@ async def test_prometheus_metrics(timemachine):
         await timemachine.step(datetime.timedelta(seconds=10))
         await ctx.unschedule_task(dynamic_task_1, "1")
 
+        await ctx.get_task(task_1)
+        await ctx.list_tasks(dynamic_task_1)
+
         ctx.shutdown()
         await task
         await timemachine.unwind()
@@ -51,5 +54,7 @@ async def test_prometheus_metrics(timemachine):
     assert 'pyncette_repository_ops_total{operation="extend_lease",task_name="task_1"} 5.0' in metrics
     assert 'pyncette_repository_ops_total{operation="register_task",task_name="dynamic_task_1"} 1.0' in metrics
     assert 'pyncette_repository_ops_total{operation="unregister_task",task_name="dynamic_task_1"} 1.0' in metrics
+    assert 'pyncette_repository_ops_total{operation="get_task_state",task_name="task_1"} 1.0' in metrics
+    assert 'pyncette_repository_ops_total{operation="list_task_states",task_name="dynamic_task_1"} 1.0' in metrics
     assert 'pyncette_tasks_total{task_name="dynamic_task_1"} 9.0' in metrics
     assert 'pyncette_tasks_total{task_name="task_1"} 5.0' in metrics

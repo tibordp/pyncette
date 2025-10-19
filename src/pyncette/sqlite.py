@@ -18,9 +18,11 @@ from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
+from pyncette.model import ListTasksResponse
 from pyncette.model import PollResponse
 from pyncette.model import QueryResponse
 from pyncette.model import ResultType
+from pyncette.model import TaskState
 from pyncette.repository import Repository
 from pyncette.task import Task
 
@@ -327,6 +329,115 @@ class SqliteRepository(Repository):
                     "name": task.canonical_name,
                     "locked_by": str(lease),
                 },
+            )
+
+    async def get_task_state(
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+    ) -> Optional[TaskState]:
+        async with self._transaction():
+            records = await self._connection.execute_fetchall(
+                f"SELECT * FROM {self._table_name} WHERE name = :name",
+                {"name": task.canonical_name},
+            )
+
+            if not records:
+                return None
+
+            record = next(iter(records))
+
+            # For dynamic tasks, re-instantiate from spec to ensure we have fresh parameters
+            if task.parent_task is not None:
+                task_spec = json.loads(record["task_spec"]) if record["task_spec"] else None
+                if not task_spec:
+                    raise PyncetteException(f"Task {task.canonical_name} has no task_spec stored")
+                instantiated_task = task.parent_task.instantiate_from_spec(task_spec)
+            else:
+                # Static task - use as-is (no task_spec stored)
+                instantiated_task = task
+
+            scheduled_at = _from_timestamp(record["execute_after"])
+            assert scheduled_at is not None, "execute_after should not be None for existing tasks"
+
+            return TaskState(
+                task=instantiated_task,
+                scheduled_at=scheduled_at,
+                locked_until=_from_timestamp(record["locked_until"]),
+                locked_by=record["locked_by"],
+            )
+
+    async def list_task_states(
+        self,
+        utc_now: datetime.datetime,
+        parent_task: Task,
+        limit: Optional[int] = None,
+        continuation_token: Optional[ContinuationToken] = None,
+    ) -> ListTasksResponse:
+        if limit is None:
+            limit = self._batch_size
+
+        async with self._transaction():
+            if continuation_token is not None:
+                # Continuation token is the last name seen
+                last_name = continuation_token
+                records = await self._connection.execute_fetchall(
+                    f"""
+                    SELECT * FROM {self._table_name}
+                    WHERE parent_name = :parent_name AND name > :last_name
+                    ORDER BY name
+                    LIMIT :limit
+                    """,
+                    {
+                        "parent_name": parent_task.canonical_name,
+                        "last_name": last_name,
+                        "limit": limit + 1,  # Fetch one extra to check if there's more
+                    },
+                )
+            else:
+                records = await self._connection.execute_fetchall(
+                    f"""
+                    SELECT * FROM {self._table_name}
+                    WHERE parent_name = :parent_name
+                    ORDER BY name
+                    LIMIT :limit
+                    """,
+                    {
+                        "parent_name": parent_task.canonical_name,
+                        "limit": limit + 1,  # Fetch one extra to check if there's more
+                    },
+                )
+
+            has_more = len(records) > limit
+            if has_more:
+                records = records[:limit]
+
+            tasks = []
+            for record in records:
+                task_spec = json.loads(record["task_spec"]) if record["task_spec"] else None
+                if not task_spec:
+                    logger.warning(f"Task {record['name']} has no task_spec, skipping")
+                    continue
+
+                instantiated_task = parent_task.instantiate_from_spec(task_spec)
+
+                scheduled_at = _from_timestamp(record["execute_after"])
+                assert scheduled_at is not None, "execute_after should not be None for existing tasks"
+
+                tasks.append(
+                    TaskState(
+                        task=instantiated_task,
+                        scheduled_at=scheduled_at,
+                        locked_until=_from_timestamp(record["locked_until"]),
+                        locked_by=record["locked_by"],
+                    )
+                )
+
+            next_token = ContinuationToken(records[-1]["name"]) if has_more and records else None
+
+            return ListTasksResponse(
+                tasks=tasks,
+                continuation_token=next_token,
             )
 
     async def _update_record(

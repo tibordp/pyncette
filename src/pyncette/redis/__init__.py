@@ -17,9 +17,11 @@ from pyncette.errors import PyncetteException
 from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import Lease
+from pyncette.model import ListTasksResponse
 from pyncette.model import PollResponse
 from pyncette.model import QueryResponse
 from pyncette.model import ResultType
+from pyncette.model import TaskState
 from pyncette.repository import Repository
 from pyncette.task import Task
 
@@ -99,12 +101,14 @@ class RedisRepository(Repository):
     _namespace: str
     _manage_script: _LuaScript
     _poll_dynamic_script: _LuaScript
+    _list_dynamic_script: _LuaScript
 
     def __init__(self, redis_client: aioredis.Redis, **kwargs: Any):
         self._redis_client = redis_client
         self._namespace = kwargs.get("redis_namespace", "")
         self._batch_size = kwargs.get("batch_size", 100)
         self._poll_dynamic_script = _LuaScript("poll_dynamic.lua")
+        self._list_dynamic_script = _LuaScript("list_dynamic.lua")
         self._manage_script = _LuaScript("manage.lua")
 
         if self._batch_size < 1:
@@ -113,6 +117,7 @@ class RedisRepository(Repository):
     async def register_scripts(self) -> None:
         """Registers the Lua scripts used by the implementation ahead of time"""
         await self._poll_dynamic_script.register(self._redis_client)
+        await self._list_dynamic_script.register(self._redis_client)
         await self._manage_script.register(self._redis_client)
 
     async def poll_dynamic_task(
@@ -249,6 +254,99 @@ class RedisRepository(Repository):
             return Lease(response)
         else:
             return None
+
+    async def get_task_state(
+        self,
+        utc_now: datetime.datetime,
+        task: Task,
+    ) -> TaskState | None:
+        task_key = f"pyncette:{self._namespace}:task:{task.canonical_name}"
+
+        # Fetch the task data from Redis
+        result = await self._redis_client.hmget(task_key, "version", "execute_after", "locked_until", "locked_by", "task_spec")
+
+        # Check if task exists
+        if result[0] is None:
+            return None
+
+        version, execute_after_str, locked_until_str, locked_by, task_spec_str = result
+
+        # For dynamic tasks, re-instantiate from spec to ensure we have fresh parameters
+        if task.parent_task is not None:
+            task_spec = json.loads(task_spec_str) if task_spec_str else None
+            if not task_spec:
+                raise PyncetteException(f"Task {task.canonical_name} has no task_spec stored")
+            instantiated_task = task.parent_task.instantiate_from_spec(task_spec)
+        else:
+            # Static task - use as-is (no task_spec stored)
+            instantiated_task = task
+
+        assert execute_after_str is not None, "execute_after should not be None for existing tasks"
+        scheduled_at = datetime.datetime.fromisoformat(execute_after_str.decode())
+
+        return TaskState(
+            task=instantiated_task,
+            scheduled_at=scheduled_at,
+            locked_until=datetime.datetime.fromisoformat(locked_until_str.decode()) if locked_until_str else None,
+            locked_by=locked_by.decode() if locked_by else None,
+        )
+
+    async def list_task_states(
+        self,
+        utc_now: datetime.datetime,
+        parent_task: Task,
+        limit: int | None = None,
+        continuation_token: ContinuationToken | None = None,
+    ) -> ListTasksResponse:
+        if limit is None:
+            limit = self._batch_size
+
+        # Get the index key for this parent task
+        index_key = self._get_task_index_key(parent_task)
+
+        # Use continuation token as cursor (default to "0" to start)
+        cursor = str(continuation_token) if continuation_token is not None else "0"
+
+        # Execute the list_dynamic Lua script
+        response = await self._list_dynamic_script.execute(
+            self._redis_client,
+            keys=[index_key],
+            args=[str(limit), cursor],
+        )
+
+        # Response format: [next_cursor, [task_name1, execute_after1, locked_until1, locked_by1, task_spec1], ...]
+        next_cursor_str = response[0].decode()
+
+        tasks = []
+        for task_data in response[1:]:
+            task_name, execute_after_str, locked_until_str, locked_by, task_spec_str = task_data
+
+            task_spec = json.loads(task_spec_str) if task_spec_str else None
+            if not task_spec:
+                logger.warning(f"Task {task_name.decode()} has no task_spec, skipping")
+                continue
+
+            instantiated_task = parent_task.instantiate_from_spec(task_spec)
+
+            assert execute_after_str is not None, "execute_after should not be None for existing tasks"
+            scheduled_at = datetime.datetime.fromisoformat(execute_after_str.decode())
+
+            tasks.append(
+                TaskState(
+                    task=instantiated_task,
+                    scheduled_at=scheduled_at,
+                    locked_until=datetime.datetime.fromisoformat(locked_until_str.decode()) if locked_until_str else None,
+                    locked_by=locked_by.decode() if locked_by else None,
+                )
+            )
+
+        # Lua script returns "0" when iteration is complete
+        next_token = ContinuationToken(next_cursor_str) if next_cursor_str != "0" else None
+
+        return ListTasksResponse(
+            tasks=tasks,
+            continuation_token=next_token,
+        )
 
     async def _manage_record(self, task: Task, *args: Any) -> _ManageScriptResponse:
         response = await self._manage_script.execute(

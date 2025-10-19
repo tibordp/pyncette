@@ -7,6 +7,13 @@
 - Added `force` parameter to `schedule_task` to control behavior when updating dynamic task instances
   - Default (`force=False`): Fails with `TaskLockedException` if task is locked, preserves sooner execution time to prevent schedule postponement
   - With `force=True`: Unconditionally overwrites task state including locks and schedule
+- Added new task state query API for inspecting both static and dynamic tasks
+  - `get_task(task, instance_name=None)` - Query the state of any task (static or dynamic)
+    - For static tasks: `get_task(my_task)`
+    - For dynamic tasks: `get_task(template, "instance")` or `get_task(concrete_instance)`
+  - `list_tasks(parent_task, limit=None, continuation_token=None)` - List all instances of a dynamic task with pagination
+  - Returns `TaskState` objects containing task, scheduled_at, locked_until, and locked_by
+  - Implemented across all backends: PostgreSQL, MySQL, SQLite, DynamoDB, Redis
 
 ### Bug Fixes
 
@@ -22,6 +29,12 @@
 
 - Added `TaskLockedException` exception type for clearer error handling when tasks are locked
 - Updated `register_task` across all backends to accept `force` parameter
+- Added new `get_task_state()` method to Repository interface for querying individual task state
+- Added new `list_task_states()` method to Repository interface for paginated listing of dynamic task instances
+- Added new public API methods to `PyncetteContext`:
+  - `get_task(task, instance_name=None)` - Query state of static or dynamic tasks
+  - `list_tasks(parent_task, limit=None, continuation_token=None)` - List dynamic task instances with pagination
+- Added new model classes: `TaskState` (task state snapshot) and `ListTasksResponse` (paginated results)
 
 ## 1.0.0 (2025-10-17)
 

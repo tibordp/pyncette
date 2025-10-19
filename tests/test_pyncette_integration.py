@@ -1580,3 +1580,233 @@ async def test_schedule_task_after_one_time_task_completes(timemachine, backend)
 
     # Should have executed original one-time + at least one recurring execution
     assert counter.execute.call_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_get_task_existing(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Schedule a task
+        await ctx.schedule_task(hello, "test_instance", interval=datetime.timedelta(seconds=5), foo="bar")
+
+        # Get the task state
+        task_state = await ctx.get_task(hello, "test_instance")
+
+        # Verify task state
+        assert task_state is not None
+        assert task_state.task.name == "test_instance"
+        assert task_state.task.extra_args.get("foo") == "bar"
+        assert task_state.scheduled_at is not None
+        assert task_state.locked_until is None
+        assert task_state.locked_by is None
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_get_task_nonexistent(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Try to get a task that doesn't exist
+        task_state = await ctx.get_task(hello, "nonexistent")
+
+        # Should return None
+        assert task_state is None
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_get_task_static(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine), poll_interval=datetime.timedelta(seconds=1))
+
+    @app.task(interval=datetime.timedelta(seconds=5))
+    async def regular_task(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Start the scheduler to initialize the task state
+        task = asyncio.create_task(ctx.run())
+        await timemachine.step(datetime.timedelta(seconds=1))
+
+        # Query the static task state - this should work
+        task_state = await ctx.get_task(regular_task)
+
+        # Should return a TaskState
+        assert task_state is not None
+        assert task_state.task == regular_task
+        assert task_state.scheduled_at is not None
+
+        # Providing instance_name with a static task should raise ValueError
+        with pytest.raises(ValueError, match="instance_name provided but task is not dynamic"):
+            await ctx.get_task(regular_task, "instance")
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_get_task_dynamic_concrete(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Schedule a task
+        await ctx.schedule_task(hello, "test1", interval=datetime.timedelta(seconds=5))
+
+        # Get the concrete instance
+        concrete_task = hello.instantiate("test1", interval=datetime.timedelta(seconds=5))
+
+        # Query using the concrete instance (no instance_name)
+        task_state = await ctx.get_task(concrete_task)
+
+        # Should return the task state
+        assert task_state is not None
+        assert task_state.task.parent_task == hello
+        assert task_state.task.name == "test1"
+
+        # Providing instance_name with a concrete instance should raise ValueError
+        with pytest.raises(ValueError, match="Cannot provide instance_name with already-instantiated dynamic task"):
+            await ctx.get_task(concrete_task, "test1")
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_empty(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # List tasks when none exist
+        response = await ctx.list_tasks(hello)
+
+        # Should return empty list
+        assert response.tasks == []
+        assert response.continuation_token is None
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_multiple(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Schedule multiple tasks
+        await asyncio.gather(
+            ctx.schedule_task(hello, "task1", interval=datetime.timedelta(seconds=5), foo="bar1"),
+            ctx.schedule_task(hello, "task2", interval=datetime.timedelta(seconds=10), foo="bar2"),
+            ctx.schedule_task(hello, "task3", interval=datetime.timedelta(seconds=15), foo="bar3"),
+        )
+
+        # List all tasks
+        response = await ctx.list_tasks(hello)
+
+        # Should return all 3 tasks
+        assert len(response.tasks) == 3
+
+        # Verify task details (order not guaranteed)
+        task_names = {task.task.name for task in response.tasks}
+        assert task_names == {"task1", "task2", "task3"}
+
+        # Verify extra args are preserved
+        for task_state in response.tasks:
+            assert "foo" in task_state.task.extra_args
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_pagination(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Schedule 5 tasks
+        await asyncio.gather(*[ctx.schedule_task(hello, f"task{i}", interval=datetime.timedelta(seconds=5)) for i in range(5)])
+
+        # List with limit of 2
+        response = await ctx.list_tasks(hello, limit=2)
+
+        # Should return 2 tasks
+        assert len(response.tasks) == 2
+
+        all_tasks = response.tasks.copy()
+        while response.continuation_token is not None:
+            response = await ctx.list_tasks(hello, limit=2, continuation_token=response.continuation_token)
+            all_tasks.extend(response.tasks)
+
+        # Should eventually get all 5 tasks
+        assert len(all_tasks) == 5
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_list_tasks_non_dynamic_fails(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    @app.task(interval=datetime.timedelta(seconds=5))
+    async def regular_task(context: Context) -> None:
+        pass
+
+    async with app.create() as ctx:
+        # Should raise ValueError for non-dynamic task
+        with pytest.raises(ValueError, match="Cannot list instances of non-dynamic task"):
+            await ctx.list_tasks(regular_task)
+
+        await timemachine.unwind()
+
+
+@pytest.mark.asyncio
+async def test_get_task_locked_state(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine), poll_interval=datetime.timedelta(seconds=1))
+
+    @app.dynamic_task()
+    async def slow_task(context: Context) -> None:
+        await asyncio.sleep(30)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+
+        # Schedule a task that will run for a while
+        await ctx.schedule_task(slow_task, "test", interval=datetime.timedelta(seconds=5))
+
+        await timemachine.step(datetime.timedelta(seconds=10))
+
+        # Query the task state while it's locked
+        task_state = await ctx.get_task(slow_task, "test")
+
+        # Should show as locked
+        assert task_state is not None
+        assert task_state.locked_until is not None
+        assert task_state.locked_by is not None
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()

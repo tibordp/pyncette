@@ -411,6 +411,118 @@ With `force=True`, the task will be updated immediately even if it is executing.
 
 When updating the schedule of an existing task, the sooner of the existing and new execution times is used, preventing repeated calls from indefinitely postponing execution.
 
+## Querying task state
+
+Pyncette provides methods to inspect the state of both static and dynamic tasks.
+
+### Getting a single task
+
+You can retrieve the state of any task (static or dynamic):
+
+**For static tasks:**
+
+```python
+@app.task(interval=datetime.timedelta(minutes=5))
+async def cleanup(context: Context) -> None:
+    print("Running cleanup")
+
+
+async with app.create() as app_context:
+    # Get the static task state
+    task_state = await app_context.get_task(cleanup)
+
+    if task_state:
+        print(f"Task: {task_state.task.name}")
+        print(f"Next execution: {task_state.scheduled_at}")
+        print(f"Locked until: {task_state.locked_until}")
+        print(f"Locked by: {task_state.locked_by}")
+    else:
+        print("Task not found")
+```
+
+**For dynamic tasks:**
+
+```python
+@app.dynamic_task()
+async def hello(context: Context) -> None:
+    print(f"Hello {context.args['username']}")
+
+
+async with app.create() as app_context:
+    await app_context.schedule_task(
+        hello, "user_1", interval=datetime.timedelta(minutes=5), username="Alice"
+    )
+
+    # Get the dynamic task state using template + instance_name
+    task_state = await app_context.get_task(hello, "user_1")
+
+    # Or using a pre-instantiated task
+    concrete_task = hello.instantiate("user_1", interval=datetime.timedelta(minutes=5))
+    task_state = await app_context.get_task(concrete_task)
+
+    if task_state:
+        print(f"Task: {task_state.task.name}")
+        print(f"Next execution: {task_state.scheduled_at}")
+        print(f"Locked until: {task_state.locked_until}")
+        print(f"Locked by: {task_state.locked_by}")
+        print(f"Username: {task_state.task.extra_args['username']}")
+    else:
+        print("Task not found")
+```
+
+The `TaskState` object contains:
+
+- `task`: The task instance with all its parameters
+- `scheduled_at`: When the task is next scheduled to execute
+- `locked_until`: When the current execution lease expires (None if not locked)
+- `locked_by`: UUID of the worker holding the lease (None if not locked)
+
+### Listing all task instances
+
+You can list all instances of a dynamic task with pagination (note: this is only available for dynamic tasks, as static tasks have only a single instance):
+
+```python
+@app.dynamic_task()
+async def hello(context: Context) -> None:
+    print(f"Hello {context.args['username']}")
+
+
+async with app.create() as app_context:
+    # Schedule multiple tasks
+    for i in range(100):
+        await app_context.schedule_task(
+            hello,
+            f"user_{i}",
+            interval=datetime.timedelta(minutes=5),
+            username=f"User{i}",
+        )
+
+    # List all tasks with pagination
+    response = await app_context.list_tasks(hello, limit=10)
+
+    for task_state in response.tasks:
+        print(
+            f"Task: {task_state.task.name}, Username: {task_state.task.extra_args['username']}"
+        )
+
+    # Continue with next page if available
+    while response.continuation_token:
+        response = await app_context.list_tasks(
+            hello, limit=10, continuation_token=response.continuation_token
+        )
+        for task_state in response.tasks:
+            print(
+                f"Task: {task_state.task.name}, Username: {task_state.task.extra_args['username']}"
+            )
+```
+
+Notes:
+
+- Results are not guaranteed to be in any particular order
+- The `limit` parameter is an upper bound; backends may return fewer results
+- Pagination support varies by backend (DynamoDB, Redis, SQL databases all support it)
+- The continuation token is opaque and backend-specific
+
 ## Performance
 
 Tasks are executed in parallel. If you have a lot of long running tasks, you can set `concurrency_limit` in `Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting `concurrency_limit` to 1 is equivalent of serializing the execution of all the tasks.

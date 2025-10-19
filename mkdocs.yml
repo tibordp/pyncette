@@ -1,6 +1,6 @@
 site_name: Pyncette
 site_description: A reliable distributed scheduler with pluggable storage backends for Async Python
-site_url: https://pyncette.readthedocs.io
+site_url: https://tibordp.github.io/pyncette/
 repo_url: https://github.com/tibordp/pyncette
 repo_name: tibordp/pyncette
 edit_uri: edit/master/docs/

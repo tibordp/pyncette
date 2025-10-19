@@ -109,6 +109,24 @@ class QueryResponse:
     continuation_token: ContinuationToken | None
 
 
+@dataclass
+class TaskState:
+    """The state of a dynamic task instance"""
+
+    task: pyncette.task.Task
+    scheduled_at: datetime.datetime
+    locked_until: datetime.datetime | None
+    locked_by: str | None
+
+
+@dataclass
+class ListTasksResponse:
+    """The result of listing dynamic task instances"""
+
+    tasks: list[TaskState]
+    continuation_token: ContinuationToken | None
+
+
 if TYPE_CHECKING:
     import pyncette
     import pyncette.task
