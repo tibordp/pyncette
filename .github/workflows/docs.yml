@@ -30,7 +30,7 @@ jobs:
       with:
         python-version: "3.12"
     - name: Install dependencies
-      run: uv sync --extra all --extra dev
+      run: uv sync --extra all
     - name: Build docs
       run: uv run mkdocs build --strict
     - name: Upload artifact
