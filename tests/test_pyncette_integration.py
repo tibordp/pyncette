@@ -1756,19 +1756,10 @@ async def test_list_tasks_pagination(timemachine, backend):
         # Should return 2 tasks
         assert len(response.tasks) == 2
 
-        # Should have continuation token if backend supports pagination
-        # (Some backends might return all results even with limit)
         all_tasks = response.tasks.copy()
-
-        # If there's a continuation token, fetch next page
-        if response.continuation_token is not None:
-            response2 = await ctx.list_tasks(hello, limit=2, continuation_token=response.continuation_token)
-            all_tasks.extend(response2.tasks)
-
-            # Continue paginating if needed
-            while response2.continuation_token is not None:
-                response2 = await ctx.list_tasks(hello, limit=2, continuation_token=response2.continuation_token)
-                all_tasks.extend(response2.tasks)
+        while response.continuation_token is not None:
+            response = await ctx.list_tasks(hello, limit=2, continuation_token=response.continuation_token)
+            all_tasks.extend(response.tasks)
 
         # Should eventually get all 5 tasks
         assert len(all_tasks) == 5
