@@ -124,7 +124,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 Sync dependencies and install the package in editable mode:
 
 ```bash
-uv sync --extra all --extra dev
+uv sync --extra all
 ```
 
 ### Running Tests
@@ -155,7 +155,7 @@ uv run pytest tests
 
 ```bash
 uv venv --python 3.11
-uv sync --extra all --extra dev
+uv sync --extra all
 uv run pytest tests
 ```
 

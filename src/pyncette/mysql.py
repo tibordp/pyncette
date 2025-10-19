@@ -15,6 +15,7 @@ import dateutil.tz
 import pymysql
 
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
@@ -144,32 +145,84 @@ class MySQLRepository(Repository):
                 continuation_token=_CONTINUATION_TOKEN if len(ready_tasks) == self._batch_size else None,
             )
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         assert task.parent_task is not None
 
-        async with self._transaction() as cursor:
-            execute_at = _to_timestamp(task.get_next_execution(utc_now, None))
-            task_spec = json.dumps(task.as_spec())
+        new_execute_after = task.get_next_execution(utc_now, None)
+        task_spec = json.dumps(task.as_spec())
 
-            await cursor.execute(
-                f"""
-                INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
-                VALUES (%s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    task_spec = %s,
-                    execute_after = %s,
-                    locked_by = NULL,
-                    locked_until = NULL
-                """,
-                (
-                    task.canonical_name,
-                    task.parent_task.canonical_name,
-                    task_spec,
-                    execute_at,
-                    task_spec,
-                    execute_at,
-                ),
-            )
+        async with self._transaction() as cursor:
+            if force:
+                # Force mode: unconditional upsert
+                await cursor.execute(
+                    f"""
+                    INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
+                    VALUES (%s, %s, %s, %s)
+                    ON DUPLICATE KEY UPDATE
+                        task_spec = %s,
+                        execute_after = %s,
+                        locked_by = NULL,
+                        locked_until = NULL
+                    """,
+                    (
+                        task.canonical_name,
+                        task.parent_task.canonical_name,
+                        task_spec,
+                        _to_timestamp(new_execute_after),
+                        task_spec,
+                        _to_timestamp(new_execute_after),
+                    ),
+                )
+            else:
+                # Safe mode: check locks and preserve sooner schedule
+                await cursor.execute(
+                    f"SELECT * FROM {self._table_name} WHERE name = %s FOR UPDATE",
+                    (task.canonical_name,),
+                )
+                record = await cursor.fetchone()
+
+                if record:
+                    existing_locked_until = _from_timestamp(record["locked_until"])
+                    existing_execute_after = _from_timestamp(record["execute_after"])
+
+                    # Check if task is currently locked
+                    if existing_locked_until is not None and existing_locked_until > utc_now:
+                        raise TaskLockedException(task, existing_locked_until)
+
+                    # Keep sooner schedule to avoid postponement
+                    if existing_execute_after is not None and new_execute_after is not None:
+                        execute_after = min(existing_execute_after, new_execute_after)
+                    else:
+                        execute_after = new_execute_after or existing_execute_after
+
+                    await cursor.execute(
+                        f"""
+                        UPDATE {self._table_name}
+                        SET
+                            task_spec = %s,
+                            execute_after = %s
+                        WHERE
+                            name = %s
+                        """,
+                        (
+                            task_spec,
+                            _to_timestamp(execute_after),
+                            task.canonical_name,
+                        ),
+                    )
+                else:
+                    await cursor.execute(
+                        f"""
+                        INSERT INTO {self._table_name} (name, parent_name, task_spec, execute_after)
+                        VALUES (%s, %s, %s, %s)
+                        """,
+                        (
+                            task.canonical_name,
+                            task.parent_task.canonical_name,
+                            task_spec,
+                            _to_timestamp(new_execute_after),
+                        ),
+                    )
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         async with self._transaction() as cursor:
@@ -362,6 +415,7 @@ async def mysql_repository(
         password=mysql_password,
         db=mysql_database,
         loop=asyncio.get_running_loop(),
+        init_command="SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
     )
     try:
         repository = MySQLRepository(mysql_pool, **kwargs)

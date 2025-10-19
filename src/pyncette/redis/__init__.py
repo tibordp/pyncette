@@ -14,6 +14,7 @@ import redis
 from redis import asyncio as aioredis
 
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import Lease
 from pyncette.model import PollResponse
@@ -138,16 +139,21 @@ class RedisRepository(Repository):
             continuation_token=_CONTINUATION_TOKEN if response[0] == b"HAS_MORE" else None,
         )
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         execute_after = task.get_next_execution(utc_now, None)
         assert execute_after is not None
 
-        await self._manage_record(
+        response = await self._manage_record(
             task,
             "REGISTER",
             execute_after.isoformat(),
             json.dumps(task.as_spec()),
+            int(force),
+            utc_now.isoformat(),
         )
+
+        if response.result == ResultType.LOCKED:
+            raise TaskLockedException(task)
 
     async def unregister_task(self, utc_now: datetime.datetime, task: Task) -> None:
         await self._manage_record(task, "UNREGISTER")

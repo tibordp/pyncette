@@ -371,6 +371,46 @@ async with app.create() as app_context:
 
 Once-off tasks have the same reliability guarantees as recurrent tasks, which is controlled by `execution_mode` and `failure_mode` parameters, but in case of success, they will not be scheduled again.
 
+## Updating dynamic tasks
+
+When calling `schedule_task` on an existing dynamic task, the task spec (including arguments and schedule) will be updated. By default, `schedule_task` will fail if the task is currently executing to avoid race conditions.
+
+```python
+@app.dynamic_task()
+async def hello(context: Context) -> None:
+    print(f"Hello {context.args['username']}")
+
+
+async with app.create() as app_context:
+    # Create the task
+    await app_context.schedule_task(
+        hello, "user_1", interval=datetime.timedelta(seconds=5), username="Alice"
+    )
+
+    # Update the username - this will update the task spec
+    await app_context.schedule_task(
+        hello, "user_1", interval=datetime.timedelta(seconds=5), username="Bob"
+    )
+
+    await app_context.run()
+```
+
+If the task is currently locked, `schedule_task` will raise `TaskLockedException`. To allow updates during execution, use `force=True`:
+
+```python
+await app_context.schedule_task(
+    hello,
+    "user_1",
+    interval=datetime.timedelta(minutes=5),
+    username="Charlie",
+    force=True,
+)
+```
+
+With `force=True`, the task will be updated immediately even if it is executing. The currently running instance will fail to commit its result (lease lost), but will continue to run until completion.
+
+When updating the schedule of an existing task, the sooner of the existing and new execution times is used, preventing repeated calls from indefinitely postponing execution.
+
 ## Performance
 
 Tasks are executed in parallel. If you have a lot of long running tasks, you can set `concurrency_limit` in `Pyncette` constructor, as this ensures that there are at most that many executing tasks at any given time. If there are no free slots in the semaphore, this will serve as a back-pressure and ensure that we don't poll additional tasks until some of the currently executing ones finish, enabling the pending tasks to be scheduled on other instances of your app. Setting `concurrency_limit` to 1 is equivalent of serializing the execution of all the tasks.

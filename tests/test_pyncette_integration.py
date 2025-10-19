@@ -15,6 +15,7 @@ from pyncette import Pyncette
 from pyncette import PyncetteContext
 from pyncette.errors import LeaseLostException
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.executor import SynchronousExecutor
 from pyncette.utils import with_heartbeat
 
@@ -1336,3 +1337,246 @@ async def test_disabled_partitioned_task(timemachine, backend):
         await timemachine.unwind()
 
     assert counter.execute.call_count == 5
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_fails_when_locked_without_force(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def long_task(context: Context) -> None:
+        counter.execute()
+        await asyncio.sleep(30)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(long_task, "1", interval=datetime.timedelta(seconds=2))
+        await timemachine.step(datetime.timedelta(seconds=5))
+
+        # Task should be executing now, so re-scheduling should fail
+        try:
+            with pytest.raises(TaskLockedException):
+                await ctx.schedule_task(long_task, "1", interval=datetime.timedelta(seconds=10))
+        finally:
+            ctx.shutdown()
+            await task
+            await timemachine.unwind()
+
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_force_overrides_lock(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def long_task(context: Context) -> None:
+        counter.execute()
+        await asyncio.sleep(30)
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+        await ctx.schedule_task(long_task, "1", interval=datetime.timedelta(seconds=2))
+        await timemachine.step(datetime.timedelta(seconds=5))
+
+        # Task should be executing, but force=True should override
+        await ctx.schedule_task(long_task, "1", interval=datetime.timedelta(seconds=10), force=True)
+
+        # Step forward to allow new schedule to execute
+        await timemachine.step(datetime.timedelta(seconds=15))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Original task execution + new execution after force override
+    assert counter.execute.call_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_preserves_sooner_time_when_updating_to_later(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        # Schedule to execute in 5 seconds
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=5))
+
+        # Update to execute in 1 minute (later)
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(minutes=1))
+
+        task = asyncio.create_task(ctx.run())
+        # Step forward 10 seconds - should execute at original 5 second mark
+        await timemachine.step(datetime.timedelta(seconds=10))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Should have executed at the sooner time (5 seconds)
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_preserves_sooner_time_when_updating_to_sooner(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        # Schedule to execute in 1 minute
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(minutes=1))
+
+        # Update to execute in 5 seconds (sooner)
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=5))
+
+        task = asyncio.create_task(ctx.run())
+        # Step forward 10 seconds - should execute at the sooner time
+        await timemachine.step(datetime.timedelta(seconds=10))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Should have executed at the sooner time (5 seconds)
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_force_uses_new_time_not_min(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        # Schedule to execute in 5 seconds
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=5))
+
+        # Force update to execute in 1 minute (later) - should use new time, not MIN
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(minutes=1), force=True)
+
+        task = asyncio.create_task(ctx.run())
+        # Step forward 10 seconds - should NOT execute (new time is 1 minute)
+        await timemachine.step(datetime.timedelta(seconds=10))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Should NOT have executed yet (new schedule is 1 minute)
+    assert counter.execute.call_count == 0
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_updates_spec_while_preserving_schedule(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute(context.args.get("username", "default"))
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        # Schedule with username "alice" to execute in 5 seconds
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=5), username="alice")
+
+        # Update username to "bob" with later execution time
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(minutes=1), username="bob")
+
+        task = asyncio.create_task(ctx.run())
+        # Step forward 10 seconds - should execute at sooner time (5s) with updated spec (bob)
+        await timemachine.step(datetime.timedelta(seconds=10))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Should have executed with updated username
+    counter.execute.assert_called_once_with("bob")
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_interval_preserves_sooner_schedule(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    async with app.create() as ctx:
+        task = asyncio.create_task(ctx.run())
+
+        # Schedule with 2 second interval
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=2))
+
+        # Immediately reschedule with 10 second interval (longer)
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=10))
+
+        # Step forward 5 seconds - should execute at 2 second mark (original sooner schedule)
+        await timemachine.step(datetime.timedelta(seconds=5))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Should have executed 1 time (at 2s), next execution uses new interval (would be at 12s)
+    assert counter.execute.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_schedule_task_after_one_time_task_completes(timemachine, backend):
+    app = Pyncette(**backend.get_args(timemachine))
+
+    counter = MagicMock()
+
+    @app.dynamic_task()
+    async def hello(context: Context) -> None:
+        counter.execute()
+
+    now = timemachine.utcnow()
+    async with app.create() as ctx:
+        # Schedule as one-time task
+        await ctx.schedule_task(hello, "1", execute_at=now + datetime.timedelta(seconds=2))
+
+        task = asyncio.create_task(ctx.run())
+
+        # Let it execute and complete
+        await timemachine.step(datetime.timedelta(seconds=5))
+        assert counter.execute.call_count == 1
+
+        # Now reschedule the same task with a recurring interval
+        await ctx.schedule_task(hello, "1", interval=datetime.timedelta(seconds=3))
+
+        # Step forward - should execute again with new schedule
+        await timemachine.step(datetime.timedelta(seconds=5))
+
+        ctx.shutdown()
+        await task
+        await timemachine.unwind()
+
+    # Should have executed original one-time + at least one recurring execution
+    assert counter.execute.call_count >= 2

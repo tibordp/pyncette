@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Features
+
+- Added `force` parameter to `schedule_task` to control behavior when updating dynamic task instances
+  - Default (`force=False`): Fails with `TaskLockedException` if task is locked, preserves sooner execution time to prevent schedule postponement
+  - With `force=True`: Unconditionally overwrites task state including locks and schedule
+
+### Bug Fixes
+
+- Fixed race condition in `schedule_task` where calling it while a task was executing could clear locks and cause duplicate execution
+- Fixed schedule starvation issue where repeated `schedule_task` calls would indefinitely postpone task execution
+
+### Performance Improvements
+
+- Switched MySQL backend to READ COMMITTED isolation level to eliminate gap lock deadlocks and improve concurrency
+- Optimized Postgres and MySQL `register_task` to use upsert (`INSERT ON CONFLICT`/`INSERT ON DUPLICATE KEY UPDATE`) for force mode
+
+### API Changes
+
+- Added `TaskLockedException` exception type for clearer error handling when tasks are locked
+- Updated `register_task` across all backends to accept `force` parameter
+
 ## 1.0.0 (2025-10-17)
 
 ### Breaking Changes

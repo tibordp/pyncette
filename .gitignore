@@ -75,6 +75,6 @@ site/
 .vscode/tags
 
 ## Pyncette
-pyncette.db
+pyncette_*.db
 
 uv.lock

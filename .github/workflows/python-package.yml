@@ -20,7 +20,7 @@ jobs:
       with:
         python-version: "3.12"
     - name: Install dependencies
-      run: uv sync --extra all --extra dev
+      run: uv sync --extra all
     - name: Run pre-commit
       run: uv run pre-commit run --all-files --show-diff-on-failure
     - name: Run ty
@@ -42,7 +42,7 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
     - name: Install dependencies
-      run: uv sync --extra all --extra dev
+      run: uv sync --extra all
     - name: Run unit tests
       run: uv run pytest --cov --cov-report=term-missing --cov-report=xml -vv -m "not integration" --backend=default tests
     - name: Upload coverage
@@ -114,7 +114,7 @@ jobs:
       with:
         python-version: "3.12"
     - name: Install dependencies
-      run: uv sync --extra all --extra dev
+      run: uv sync --extra all
     - name: Run integration tests
       env:
         POSTGRES_URL: postgres://postgres:postgres@localhost/postgres

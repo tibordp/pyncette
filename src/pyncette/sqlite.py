@@ -14,6 +14,7 @@ import aiosqlite
 import dateutil.tz
 
 from pyncette.errors import PyncetteException
+from pyncette.errors import TaskLockedException
 from pyncette.model import ContinuationToken
 from pyncette.model import ExecutionMode
 from pyncette.model import Lease
@@ -128,30 +129,58 @@ class SqliteRepository(Repository):
                 continuation_token=_CONTINUATION_TOKEN if len(concrete_tasks) == self._batch_size else None,
             )
 
-    async def register_task(self, utc_now: datetime.datetime, task: Task) -> None:
+    async def register_task(self, utc_now: datetime.datetime, task: Task, force: bool = False) -> None:
         async with self._transaction(explicit_begin=True):
             assert task.parent_task is not None
-            record = await self._connection.execute_fetchall(
-                f"SELECT 1 FROM {self._table_name} WHERE name = :name",
+            records = await self._connection.execute_fetchall(
+                f"SELECT * FROM {self._table_name} WHERE name = :name",
                 {"name": task.canonical_name},
             )
 
-            if record:
+            new_execute_after = task.get_next_execution(utc_now, None)
+
+            if records:
+                record = next(iter(records))
+                existing_locked_until = _from_timestamp(record["locked_until"])
+                existing_execute_after = _from_timestamp(record["execute_after"])
+
+                # Check if task is currently locked
+                if not force and existing_locked_until is not None and existing_locked_until > utc_now:
+                    raise TaskLockedException(task, existing_locked_until)
+
+                # Determine the execute_after to use
+                if force:
+                    # Force mode: use new schedule and clear locks
+                    execute_after = new_execute_after
+                    locked_until = None
+                    locked_by = None
+                else:
+                    # Safe mode: keep sooner schedule to avoid starvation
+                    if existing_execute_after is not None and new_execute_after is not None:
+                        execute_after = min(existing_execute_after, new_execute_after)
+                    else:
+                        execute_after = new_execute_after or existing_execute_after
+                    # Preserve lock state (though we already checked it's not locked)
+                    locked_until = existing_locked_until
+                    locked_by = record["locked_by"]
+
                 await self._connection.execute_fetchall(
                     f"""
                     UPDATE {self._table_name}
                     SET
                         task_spec = :task_spec,
                         execute_after = :execute_after,
-                        locked_until = NULL,
-                        locked_by = NULL
+                        locked_until = :locked_until,
+                        locked_by = :locked_by
                     WHERE
                         name = :name
                     """,
                     {
                         "name": task.canonical_name,
                         "task_spec": json.dumps(task.as_spec()),
-                        "execute_after": _to_timestamp(task.get_next_execution(utc_now, None)),
+                        "execute_after": _to_timestamp(execute_after),
+                        "locked_until": _to_timestamp(locked_until),
+                        "locked_by": locked_by,
                     },
                 )
             else:
@@ -164,7 +193,7 @@ class SqliteRepository(Repository):
                         "name": task.canonical_name,
                         "parent_name": task.parent_task.canonical_name,
                         "task_spec": json.dumps(task.as_spec()),
-                        "execute_after": _to_timestamp(task.get_next_execution(utc_now, None)),
+                        "execute_after": _to_timestamp(new_execute_after),
                     },
                 )
 
