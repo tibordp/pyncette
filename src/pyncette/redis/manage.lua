@@ -99,30 +99,29 @@ elseif ARGV[1] == 'REGISTER' then
     local force = force == '1'
 
     if not key_exists then
+        -- Create new task
         version, execute_after, task_spec = 0, incoming_execute_after, incoming_task_spec
         redis.call('hmset', KEYS[1], 'version', version, 'execute_after', execute_after, 'task_spec', task_spec)
         redis.call('zadd', KEYS[2], 0, getIndexKey())
         result = "READY"
+    elseif force then
+        -- Force mode: unconditional overwrite
+        updateRecord(incoming_execute_after, false, false, incoming_task_spec)
+        result = "READY"
     else
-        -- Check if task is locked when force is false
-        if not force and locked_until and utc_now < locked_until then
+        -- Safe mode: check locks and preserve sooner schedule
+        if locked_until and utc_now < locked_until then
             result = "LOCKED"
         else
             local final_execute_after
-            if force then
-                -- Force mode: use new schedule and clear locks
-                final_execute_after = incoming_execute_after
-                updateRecord(final_execute_after, false, false, incoming_task_spec)
+            -- Keep sooner schedule to avoid postponement
+            if execute_after and execute_after < incoming_execute_after then
+                final_execute_after = execute_after
             else
-                -- Safe mode: keep sooner schedule to avoid starvation
-                if execute_after and execute_after < incoming_execute_after then
-                    final_execute_after = execute_after
-                else
-                    final_execute_after = incoming_execute_after
-                end
-                -- Preserve locks
-                updateRecord(final_execute_after, locked_until, locked_by, incoming_task_spec)
+                final_execute_after = incoming_execute_after
             end
+            -- Update with preserved locks
+            updateRecord(final_execute_after, locked_until, locked_by, incoming_task_spec)
             result = "READY"
         end
     end
