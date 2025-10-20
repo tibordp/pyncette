@@ -7,7 +7,7 @@
 [![PyPI Wheel](https://img.shields.io/pypi/wheel/pyncette.svg)](https://pypi.org/project/pyncette)
 [![Supported versions](https://img.shields.io/pypi/pyversions/pyncette.svg)](https://pypi.org/project/pyncette)
 [![Supported implementations](https://img.shields.io/pypi/implementation/pyncette.svg)](https://pypi.org/project/pyncette)
-[![Commits since latest release](https://img.shields.io/github/commits-since/tibordp/pyncette/v1.0.0.svg)](https://github.com/tibordp/pyncette/compare/v1.0.0...master)
+[![Commits since latest release](https://img.shields.io/github/commits-since/tibordp/pyncette/v1.1.0.svg)](https://github.com/tibordp/pyncette/compare/v1.1.0...master)
 
 A reliable distributed scheduler with pluggable storage backends for Async Python.
 
